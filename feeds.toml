@@ -1,0 +1,7 @@
+[[source]]
+name = "sm8550"
+kind = "soc"
+git = "https://github.com/UniXNU/UniXNU-sm8550-common"
+# Borrowed for SM8650 as UniXNU-shennong does (UFS GCC offsets, SMMU stream ID and PMGR patch stated identical
+# on SM8650 by that author, unverified here). Commit as pinned by shennong; no UniXNU-sm8650-common exists (checked 2026-11-13).
+commit = "a9f45dc60c035084b95463781538380f4c3606c9"
