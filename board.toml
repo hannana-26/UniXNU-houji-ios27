@@ -63,7 +63,8 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120"]
 [payload.adt]
 # T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.
 chip_id = "0x8140"
-owned_memory_size = "0x200000000"
+# r19: 8 GiB overflowed XNU's 16-page bootstrap tables (start_first_cpu self-loop at +0x230); keep = dram_size.
+owned_memory_size = "0x80000000"
 packed_data_ramdisk = false
 persistent_data = false
 

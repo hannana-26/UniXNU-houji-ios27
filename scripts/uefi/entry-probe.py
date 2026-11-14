@@ -353,6 +353,108 @@ def assemble(source, va, symbols, workdir):
     return binary.read_bytes()
 
 
+MARK_REGION = 0xFFFFFFF00AD80110      # zero padding in __TEXT_EXEC (0xef0 bytes)
+MARK_REGION_END = 0xFFFFFFF00AD81000
+MARK_SLOT = 0x50
+
+# Paint the top half of band x0 (screen split in 16 bands) yellow, on the
+# kernel's own frame buffer mapping (vinfo). Clobbers x0, x9-x17 and flags.
+MARK_FN = """.text
+.global _start
+_start:
+  ldr x9, =vinfo
+  ldr w10, [x9]
+  ldr w11, [x9, #12]
+  ldr x12, [x9, #16]
+  cbz x12, 9f
+  lsr w13, w10, #4
+  mul w14, w13, w0
+  mul x15, x14, x11
+  add x15, x12, x15
+  mul x16, x13, x11
+  lsr x16, x16, #1
+  movz w17, #0xFF00
+  movk w17, #0x00FF, lsl #16
+1:
+  str w17, [x15], #4
+  tst x15, #63
+  b.ne 2f
+  sub x9, x15, #64
+  dc civac, x9
+2:
+  subs x16, x16, #4
+  b.hi 1b
+  dsb sy
+9:
+  ret
+.ltorg
+"""
+
+MARK_SAVE = """  sub sp, sp, #0x60
+  stp x0, x9, [sp]
+  stp x10, x11, [sp, #0x10]
+  stp x12, x13, [sp, #0x20]
+  stp x14, x15, [sp, #0x30]
+  stp x16, x17, [sp, #0x40]
+  str x30, [sp, #0x50]
+  mov x0, #{band}
+  bl mark
+  ldp x0, x9, [sp]
+  ldp x10, x11, [sp, #0x10]
+  ldp x12, x13, [sp, #0x20]
+  ldp x14, x15, [sp, #0x30]
+  ldp x16, x17, [sp, #0x40]
+  ldr x30, [sp, #0x50]
+  add sp, sp, #0x60
+"""
+
+
+def pc_relative(insn):
+    return ((insn & 0x1F000000) == 0x10000000 or      # adr/adrp
+            (insn & 0x7C000000) == 0x14000000 or      # b/bl
+            (insn & 0x7E000000) == 0x34000000 or      # cbz/cbnz
+            (insn & 0x7E000000) == 0x36000000 or      # tbz/tbnz
+            (insn & 0xFF000010) == 0x54000000 or      # b.cond
+            (insn & 0x3B000000) == 0x18000000)        # ldr literal
+
+
+def add_marks(data, specs, kernel_names, symbols, word):
+    if len(specs) > 14:
+        raise SystemExit('at most 14 marks (bands 2..15)')
+    need = 0x80 + MARK_SLOT * len(specs)
+    if MARK_REGION + need > MARK_REGION_END or any(data[file_offset(MARK_REGION):file_offset(MARK_REGION_END)]):
+        raise SystemExit('mark padding is not empty or too small')
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        code = assemble(MARK_FN, MARK_REGION, {'vinfo': VINFO_VA}, Path(tmp))
+        if len(code) > 0x80:
+            raise SystemExit('mark function too large')
+        data[file_offset(MARK_REGION):file_offset(MARK_REGION) + len(code)] = code
+        for i, spec in enumerate(specs):
+            band = i + 2
+            slot = MARK_REGION + 0x80 + MARK_SLOT * i
+            if spec.startswith('@'):
+                site = kernel_names[spec[1:]]
+                first = word(site)
+                if first in (0, 0xFFFFFFFF) or pc_relative(first):
+                    raise SystemExit(f'cannot displace first instruction {first:#010x} of {spec[1:]}')
+                src = '.text\n.global _start\n_start:\n' + MARK_SAVE.format(band=band) + f'  .inst {first:#x}\n  b target\n'
+                syms = {'mark': MARK_REGION, 'target': site + 4}
+            else:
+                parts = spec.split(':')
+                func, sym, n = parts[0], parts[1], int(parts[2]) if len(parts) > 2 else 1
+                site, callee = find_call(data, symbols, func, sym, n)
+                src = '.text\n.global _start\n_start:\n  bl callee\n' + MARK_SAVE.format(band=band) + '  b target\n'
+                syms = {'mark': MARK_REGION, 'target': site + 4, 'callee': callee}
+            code = assemble(src, slot, syms, Path(tmp))
+            if len(code) > MARK_SLOT:
+                raise SystemExit('mark slot too large')
+            data[file_offset(slot):file_offset(slot) + len(code)] = code
+            struct.pack_into('<I', data, file_offset(site), branch(site, slot))
+            out.append(f'band{band}={spec}@{site:#x}')
+    return 'marks ' + ' '.join(out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('kernel', type=Path, help='the COPY of the kernel to patch in place')
@@ -361,6 +463,10 @@ def main():
     parser.add_argument('--reset-before', action='store_true', help='reset at the call site before invoking SYMBOL (requires --reset-after)')
     parser.add_argument('--panic-screen', action='store_true', help='draw panic() messages on the screen')
     parser.add_argument('--no-reset', action='store_true', help='no reset probe at all')
+    parser.add_argument('--reset-at', metavar='SYMBOL', help='delayed reset at the entry of SYMBOL (did the kernel call it?)')
+    parser.add_argument('--mark', action='append', default=[], metavar='SPEC',
+                        help='breadcrumb band (repeatable, band 2,3,... in order): FUNC:SYMBOL[:N] = after call #N of SYMBOL in FUNC; @SYMBOL = at entry of SYMBOL')
+    parser.add_argument('--no-stage2', action='store_true', help='leave out the magenta bar (frees its cave for the panic screen)')
     parser.add_argument('--occurrence', type=int, default=1, help='which call to SYMBOL (1 = first)')
     parser.add_argument('--in', dest='function', default='_arm_init', help='function that makes the call (default _arm_init)')
     args = parser.parse_args()
@@ -382,10 +488,19 @@ def main():
             raise SystemExit(f'Padding at {va:#x} is not empty')
 
     # (site, cave stage, symbols the cave is linked with)
-    sites = [(ENTRY_VA, 1, {'target': START_FIRST_CPU}),
-             (MMU_ENABLE_VA, 2, {'target': MMU_ENABLE_VA + 4})]
+    sites = [(ENTRY_VA, 1, {'target': START_FIRST_CPU})]
+    if not args.no_stage2:
+        sites.append((MMU_ENABLE_VA, 2, {'target': MMU_ENABLE_VA + 4}))
     if args.no_reset:
         description = 'no reset probe'
+    elif args.reset_at:
+        # Function-entry probe: the first instruction of SYMBOL branches to a
+        # delayed reset (no return), so a reboot means SYMBOL was entered.
+        site = kernel_names[args.reset_at]
+        if word(site) in (0, 0xFFFFFFFF):
+            raise SystemExit(f'{args.reset_at} at {site:#x} looks empty')
+        sites.append((site, 4, {'callee': site, 'target': site}))
+        description = f'stage 4 reset {args.reset_delay} s at entry of {args.reset_at} ({site:#x})'
     elif args.reset_after:
         symbols = kernel_symbols(args.kernel)
         call_va, callee = find_call(data, symbols, args.function, args.reset_after, args.occurrence)
@@ -398,6 +513,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         for site, stage, symbols in sites:
             source = RESET_BEFORE if (stage == 4 and args.reset_before) else SOURCES[stage].format(ticks=TIMEBASE * args.reset_delay)
+            if stage == 4 and args.reset_at:
+                source = source.replace('  bl callee\n', '')
             code = assemble(source, CAVES[stage], symbols, Path(tmp))
             if len(code) > CAVE_SIZE:
                 raise SystemExit(f'Stage {stage} code is too large')
@@ -423,6 +540,8 @@ def main():
             raise SystemExit('Common panic funnel is missing; refuse a partially covered panic screen')
         struct.pack_into('<I', data, file_offset(common), branch(common, common_entry))
         description += f', panic screen ({len(code):#x} bytes at {entry:#x}; common funnel at {common:#x})'
+    if args.mark:
+        description += ', ' + add_marks(data, args.mark, kernel_names, kernel_symbols(args.kernel), word)
     args.kernel.write_bytes(data)
     print(f'patched {args.kernel.name}: stage 1 blue bar, stage 2 magenta bar, {description}')
 
