@@ -52,8 +52,10 @@ loader = "firmware"
 title = "houji iOS 27.0.1: UniXNU"
 # One contiguous 2 GiB window at 0x8c0000000 (lonzzi houji UEFI HighRAM, iOS16 flow reached XNU there; author claim). Must equal the DTS memory node.
 dram_size = "0x80000000"
-# r12 (2026-11-14): green bar after hand-off, no kernel output -> entry probe (blue/magenta bars) + panic screen.
-panic_screen = true
+# r12 (2026-11-14): green bar after hand-off, no kernel output. The panic screen does not fit this kernel's padding
+# (0xa37 bytes at ...815c0, padding ends ...81ff0, 7 bytes short); r13 adds only the entry bars + 6 s reset locally
+# (scripts/uefi/mk13.sh).
+panic_screen = false
 tools = true
 trust_cache_sha256 = []
 kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120"]
