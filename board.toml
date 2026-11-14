@@ -47,7 +47,7 @@ sleep-disabled = 1
 # DarwinBoot / kernel-entry stages of the bring-up order.
 [payload]
 volume = "HOUJIPAY"
-size_mib = 80
+size_mib = 96
 loader = "firmware"
 title = "houji iOS 27.0.1: UniXNU"
 # One contiguous 2 GiB window at 0x8c0000000 (lonzzi houji UEFI HighRAM, iOS16 flow reached XNU there; author claim). Must equal the DTS memory node.
@@ -78,5 +78,5 @@ os_patch_level = "2026-08"
 path = "/chosen"
 props = [
   { name = "linux,initrd-start", type = "x", value = "0xA8000000" },
-  { name = "linux,initrd-end", type = "x", value = "0xAD000000" },
+  { name = "linux,initrd-end", type = "x", value = "0xAE000000" },
 ]
