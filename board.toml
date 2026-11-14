@@ -33,3 +33,50 @@ unixnu = "../UniXNU-official"
 
 [package.defconfig]
 "ios-27.0.1-24A446" = "houji_ios27_defconfig"
+
+[adt.product]
+[adt.product.string]
+model = "xiaomi,houji"
+[adt.product.u32]
+thin-bezel = 1
+[adt.defaults]
+[adt.defaults.u32]
+sleep-disabled = 1
+
+# Stage-0 payload (RAM only, no UFS write). Values marked "unverified" come from peridot/lonzzi and are checked at the
+# DarwinBoot / kernel-entry stages of the bring-up order.
+[payload]
+volume = "HOUJIPAY"
+size_mib = 80
+loader = "firmware"
+title = "houji iOS 27.0.1: UniXNU"
+# Xiaomi 14 16 GB (MemTotal 15516220 kB seen in Android); firmware keeps part. Unverified: derive from the memory map.
+dram_size = "0x380000000"
+panic_screen = false
+tools = true
+trust_cache_sha256 = []
+kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120"]
+
+[payload.adt]
+# T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.
+chip_id = "0x8140"
+owned_memory_size = "0x200000000"
+packed_data_ramdisk = false
+persistent_data = false
+
+[bootimg.image]
+base = 0x80000000
+kernel_offset = 0x8000
+ramdisk_offset = 0x28000000
+tags_offset = 0x100
+pagesize = 4096
+header_version = 0
+os_version = "16.0.0"
+os_patch_level = "2026-08"
+
+[[bootimg.dtb_node]]
+path = "/chosen"
+props = [
+  { name = "linux,initrd-start", type = "x", value = "0xA8000000" },
+  { name = "linux,initrd-end", type = "x", value = "0xAD000000" },
+]
