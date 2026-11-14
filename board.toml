@@ -50,8 +50,8 @@ volume = "HOUJIPAY"
 size_mib = 80
 loader = "firmware"
 title = "houji iOS 27.0.1: UniXNU"
-# Xiaomi 14 16 GB (MemTotal 15516220 kB seen in Android); firmware keeps part. Unverified: derive from the memory map.
-dram_size = "0x380000000"
+# One contiguous 2 GiB window at 0x8c0000000 (lonzzi houji UEFI HighRAM, iOS16 flow reached XNU there; author claim). Must equal the DTS memory node.
+dram_size = "0x80000000"
 panic_screen = false
 tools = true
 trust_cache_sha256 = []
