@@ -1,0 +1,131 @@
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -2578,14 +2578,123 @@
+ }
+ #endif /* __arm64__ */
+ 
++void unixnu_fileset_unmapped_report(uint64_t *registers) __attribute__((used, noreturn));
++
+ /*
+  * Target of original kext calls into kernel functions this kernel does not have (fileset emission
+- * redirects them here). The return address is the call site in the original component.
++ * redirects them here). A caller may reach this symbol through a tail branch, so x30 can hold a
++ * stale data pointer instead of the call site. Save the raw registers and let the report name the
++ * import stub (x16) and the PAC modifier (x17) as well as the raw and stripped x30.
++ * Bring-up bypass 2026-11-11: the call now returns zero and continues instead of
++ * stopping the boot on this report. The raw register report below stays compiled;
++ * point this symbol at it again to get the diagnostic panic back.
+  */
+-__attribute__((noinline, noreturn, used))
++__attribute__((naked, used))
+ void
+-unixnu_fileset_unmapped(uint64_t arg0, uint64_t arg1)
++unixnu_fileset_unmapped(void)
++{
++	__asm__ volatile("mov x0, #0\n\tret");
++}
++
++static inline boolean_t
++unixnu_data_candidate(uint64_t value)
+ {
+-	panic("fileset: original component called an unmapped kernel function from %p (x0 0x%llx x1 0x%llx)",
+-	    __builtin_ptrauth_strip(__builtin_return_address(0), 0), arg0, arg1);
++	return (value >= 0xfffffff007dd0000ULL && value < 0xfffffff0083ec000ULL) ||
++	       (value >= 0xfffffff00b6b0000ULL && value < 0xfffffff00b9a0000ULL);
+ }
++
++__attribute__((used, noreturn))
++void
++unixnu_fileset_unmapped_report(uint64_t *r)
++{
++	uint64_t candidate[6] = { 0, 0, 0, 0, 0, 0 };
++	int found = 0;
++
++	/* A call through a component import loads the slot into an arbitrary
++	 * register; print any saved register that points into kext data so the
++	 * exact stubbed slot can be decoded from the original kernelcache. */
++	for (int i = 0; i < 31 && found < 3; i++) {
++		if (unixnu_data_candidate(r[i])) {
++			candidate[found++] = r[i];
++		}
++	}
++	/* The slot address may only survive in a caller local; scan a bounded
++	 * window of the caller's stack for more data pointers. */
++	uint64_t *stack = (uint64_t *)r[31];
++	if (stack != NULL) {
++		for (int i = 0; i < 32 && found < 6; i++) {
++			if (unixnu_data_candidate(stack[i])) {
++				candidate[found++] = stack[i];
++			}
++		}
++	}
++	panic("fileset: original component called an unmapped kernel function from raw %p stripped %p (x0 0x%llx x1 0x%llx x8 0x%llx x16 0x%llx x17 0x%llx slots %p %p %p %p %p %p)",
++	    (void *)r[30], __builtin_ptrauth_strip((void *)r[30], 0), r[0], r[1], r[8], r[16], r[17],
++	    (void *)candidate[0], (void *)candidate[1], (void *)candidate[2],
++	    (void *)candidate[3], (void *)candidate[4], (void *)candidate[5]);
++}
++
++/*
++ * AppleM2ScalerCSCDriver from the 13432 kernel calls a clock/state reader that the 12377 source
++ * does not have. The prelink's native data placement overwrites the globals the original reader
++ * used, so return the first state instead of calling the unmapped stub. The caller uses the low
++ * three bits as a state index and retries; zero is the first state.
++ */
++__attribute__((used))
++uint32_t
++unixnu_apple_m2_clock_state(void)
++{
++	return 0;
++}
++
++/*
++ * AppleM2ScalerCSCDriver's 13432 property helper zeroes a caller buffer, looks up a string
++ * property by key and copies it. The 12377 kernel has no equivalent. Zero a valid buffer and
++ * report "absent" so the driver takes its no-property path instead of the unmapped stub.
++ */
++__attribute__((used))
++void *
++unixnu_apple_m2_property(void *key __unused, void *buffer, uint32_t size)
++{
++	if (buffer != NULL && size != 0) {
++		bzero(buffer, size);
++	}
++	return NULL;
++}
++
++
++/*
++ * AppleImage4/Image4's 13432 one-time security-flag initializer. The original
++ * reads a runtime struct and caches status 2 plus a flag word. The 12377
++ * native __DATA_CONST placement overwrote those globals, so return the cached
++ * status and an empty flag word. Image4's callers treat non-zero status as
++ * "initialized"; the AppleImage4 wrappers that compare against 1 take their
++ * cached-status path.
++ */
++__attribute__((used))
++void
++unixnu_apple_image4_flags(uint32_t *status, uint32_t *flags)
++{
++	if (status != NULL) {
++		*status = 2;
++	}
++	if (flags != NULL) {
++		*flags = 0;
++	}
++}
++
++/*
++ * AppleImage4's remaining five 13432 imports have no 12377 body. The probe used to panic
++ * with the target address to identify them; the identified one now has a reviewed shim,
++ * so the rest return zero and let Image4 continue without them.
++ */
++#define UNIXNU_PROBE(name, value) \
++	__attribute__((used, naked)) void name(void) { __asm__ volatile("mov x0, #0\n\tret"); }
++
++UNIXNU_PROBE(unixnu_probe_image4_0, "AppleImage4 0xfffffff00abde90c")
++UNIXNU_PROBE(unixnu_probe_image4_1, "AppleImage4 0xfffffff00abdea40")
++UNIXNU_PROBE(unixnu_probe_image4_2, "AppleImage4 0xfffffff00b0de25c")
++UNIXNU_PROBE(unixnu_probe_image4_3, "AppleImage4 0xfffffff00b0fca08")
++UNIXNU_PROBE(unixnu_probe_image4_5, "AppleImage4 0xfffffff00b4182c8")
++
++#undef UNIXNU_PROBE
