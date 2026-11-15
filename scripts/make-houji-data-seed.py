@@ -151,6 +151,10 @@ def pin_packed_volume_uuid(path, new):
     data = bytearray(path.read_bytes())
     _, extents = packed_ramdisk.regions(bytes(data))
     cursor = 32 + 16 * len(extents)
+    # The block size comes from the container superblock (NXSB) at 4096-byte
+    # granularity, exactly as the official set_volume_uuid reads it once; an
+    # APSB carries flags at that offset, not a size, so it must not be read per
+    # candidate block. Every obj_phys checksum (fletcher64) spans bytes 8..block size.
     found = set()
     patched = 0
     for _, view in extents:
@@ -159,15 +163,28 @@ def pin_packed_volume_uuid(path, new):
         for at in range(0, len(view), 4096):
             start = base + at
             block = data[start:start + 4096]
+            if bytes(block[32:36]) != b'NXSB':
+                continue
+            block_size = struct.unpack_from('<I', block, 36)[0]
+            if 64 <= block_size <= 4096:
+                break
+        else:
+            block_size = 4096
+    cursor = 32 + 16 * len(extents)
+    for _, view in extents:
+        base = cursor
+        cursor += len(view)
+        for at in range(0, len(view), block_size):
+            start = base + at
+            block = data[start:start + block_size]
             if bytes(block[32:36]) != b'APSB':
                 continue
-            size = struct.unpack_from('<I', block, 36)[0]
-            if not 64 <= size <= 4096 or fletcher64(bytes(block[8:8 + size])) != bytes(block[0:8]):
+            if fletcher64(bytes(block[8:block_size])) != bytes(block[0:8]):
                 continue
             found.add(bytes(block[240:256]))
             if bytes(block[240:256]) != new.bytes:
                 data[start + 240:start + 256] = new.bytes
-                data[start:start + 8] = fletcher64(bytes(data[start + 8:start + size]))
+                data[start:start + 8] = fletcher64(bytes(data[start + 8:start + block_size]))
                 patched += 1
     if len(found) != 1:
         raise SystemExit(f'{path}: expected one seed volume UUID, found {len(found)}')
