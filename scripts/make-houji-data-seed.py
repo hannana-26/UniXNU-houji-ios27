@@ -160,6 +160,9 @@ def main():
         if not (mount / 'sbin/launchd').is_file() or not (mount / 'private/var').is_dir():
             raise SystemExit('the attached OS image is not an IPSW OS volume')
         seed = work / 'data.dbr'
+        # seed-data-grow.py keeps its scratch image in a tempfile under the tree's build/
+        # directory (the workflow's own seed path creates it the same way).
+        (TREE / 'build').mkdir(exist_ok=True)
         log(f'building the first-install seed with the official make-data-seed.py (--gib {GIB})')
         subprocess.run([sys.executable, str(TREE / 'scripts/make-data-seed.py'), str(mount), str(seed),
                         '--gib', str(GIB), '--build', BUILD], check=True)
