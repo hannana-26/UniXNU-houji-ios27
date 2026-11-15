@@ -266,7 +266,7 @@ struct boot_user_image {uint64_t base; uint8_t uuid[16];};
 struct boot_user_stack {uint64_t slide, frames[16]; struct boot_user_image images[2]; uint32_t count, error;};
 struct boalloc_rec {struct bo_trace trace; int32_t pid; uint32_t reserved; struct boot_user_stack stack;};
 _Static_assert(sizeof(struct boalloc_rec) == 256, "boalloc record");
-extern void (*native_adreno_bo_hook)(const struct bo_trace *) __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) void (*native_adreno_bo_hook)(const struct bo_trace *);
 extern void boot_user_stack_here(struct boot_user_stack *) __attribute__((weak_import));
 enum {BoAllocRing = 8192};
 static struct boalloc_rec *boalloc_ring;
