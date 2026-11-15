@@ -93,7 +93,11 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
 chip_id = "0x8140"
 # r19: 8 GiB overflowed XNU's 16-page bootstrap tables (start_first_cpu self-loop at +0x230); keep = dram_size.
 owned_memory_size = "0x80000000"
-packed_data_ramdisk = false
+# r46: packed delivery (as sheng/aston/cupid/peridot): DarwinBoot keeps the
+# packed seed (small) instead of expanding it -- the unpacked RAMDisk path
+# needed the 8 GiB seed expanded inside the 2 GiB darwinboot window and failed
+# with EFI_BAD_BUFFER_SIZE; the kernel's RamBlock unpacks packed seeds natively.
+packed_data_ramdisk = true
 persistent_data = false
 
 [bootimg.image]
