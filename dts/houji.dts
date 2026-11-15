@@ -1496,6 +1496,12 @@ psci {
 			#address-cells = <0x01>;
 			#size-cells = <0x01>;
 			phandle = <0x01>;
+			/* XNU's AddPHandle/FindPHandle register interrupt phandles only
+			   from "AAPL,phandle" (IODeviceTreeSupport.cpp gIODTPHandleKey);
+			   with the FDT-style "phandle" alone every interrupt-parent
+			   resolved to NULL and IODTGetICellCounts(NULL) data-aborted
+			   inside IODeviceTreeAlloc (peridot marble-milacy precedent). */
+			AAPL,phandle = <0x01>;
 
 			msi-controller@17140000 {
 				compatible = "arm,gic-v3-its";
