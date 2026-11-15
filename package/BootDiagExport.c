@@ -211,14 +211,15 @@ static int worth(const void *a, const void *b) {
 // Touch reports: kernel.touch.bin, the time of every report the touch driver handed to the HID event driver (HidInputProbe.cpp).
 extern uint64_t mach_absolute_time(void);
 extern void absolutetime_to_nanoseconds(uint64_t, uint64_t *);
-extern volatile uint64_t *native_touch_report_ring __attribute__((weak_import));
-extern volatile uint32_t native_touch_report_count __attribute__((weak_import));
+/* houji has no touch probe module; weak defaults. */
+__attribute__((weak, visibility("hidden"))) volatile uint64_t *native_touch_report_ring;
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_touch_report_count;
 enum {TouchRing = 65536};
 // Display refresh ticks (LegacyDisplayProbe.cpp), kernel.vsync.bin: header "VSY1", total, kept, 0; then u64 (microseconds << 3) | event
 // (0 armed, 1 sent, 2 idle stop, 3 late, 4 started, 5 refresh reported), oldest first.
 #include "TouchTrace.h"
 _Static_assert(sizeof(struct touch_trace_row) == 48, "TPR1 row");
-extern const struct touch_trace_row *sheng_touch_trace_freeze(uint32_t *) __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) const struct touch_trace_row *sheng_touch_trace_freeze(uint32_t *total) {if (total) *total = 0; return NULL;}
 extern unsigned native_legacy_prepare_report(char *,unsigned) __attribute__((weak_import));
 static const struct touch_trace_row *path_trace;
 static uint32_t path_total, path_kept;

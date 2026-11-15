@@ -42,8 +42,9 @@ extern volatile uint32_t native_legacy_rej_rects[2][4] __attribute__((weak_impor
 extern char native_legacy_rej_class[32] __attribute__((weak_import));
 // Signals to started cores whose SIGPdisabled had never been cleared (xnu cpu_common.c sheng_sigp_recover).
 extern volatile uint32_t sheng_sigp_recovered __attribute__((weak_import));
-extern volatile uint32_t sheng_idle_sigp_cleared __attribute__((weak_import)), sheng_idle_sigp_refused __attribute__((weak_import)),
-  sheng_idle_enter[8] __attribute__((weak_import)), sheng_idle_disallowed[8] __attribute__((weak_import));
+/* houji has no sheng_idle_* provider (aston bring-up patch); weak zero defaults. */
+__attribute__((weak, visibility("hidden"))) volatile uint32_t sheng_idle_sigp_cleared, sheng_idle_sigp_refused,
+  sheng_idle_enter[8], sheng_idle_disallowed[8];
 extern volatile uint32_t native_hid_input_events[8] __attribute__((weak_import));
 extern volatile int native_hid_input_results[8] __attribute__((weak_import));
 extern char native_hid_input_registry[2048] __attribute__((weak_import));

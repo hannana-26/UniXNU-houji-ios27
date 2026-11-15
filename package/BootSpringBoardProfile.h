@@ -8,7 +8,7 @@
 enum { SbPmuReady = 1, SbPmuAbsent, SbPmuTrap, SbPmuBusy, SbPmuEvents, SbPmuLost };
 extern unsigned sheng_pmu_access(unsigned setup, uint32_t values[2]);
 extern const char sheng_pmu_begin[], sheng_pmu_end[], sheng_pmu_trapped[];
-extern bool (*sheng_pmu_fixup)(arm_saved_state_t *) __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) bool (*sheng_pmu_fixup)(arm_saved_state_t *);
 
 __asm__(
 ".text\n.p2align 2\n.globl _sheng_pmu_access\n_sheng_pmu_access:\n"
