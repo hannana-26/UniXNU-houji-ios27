@@ -117,11 +117,11 @@ __attribute__((weak, visibility("hidden"))) volatile uint32_t native_legacy_ring
 __attribute__((weak, visibility("hidden"))) volatile uint64_t native_legacy_snap[64][2];
 __attribute__((weak, visibility("hidden"))) volatile uint32_t native_legacy_snap_count;
 extern volatile uint32_t native_legacy_swapstat[16] __attribute__((weak_import));
-extern volatile uint64_t (*native_adreno_tl)[8] __attribute__((weak_import));
-extern volatile uint32_t native_adreno_tl_cap __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) volatile uint64_t (*native_adreno_tl)[8];
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_adreno_tl_cap;
 extern volatile uint32_t native_adreno_tl_count __attribute__((weak_import));
-extern volatile uint32_t native_gop_wait_ring_count __attribute__((weak_import));
-extern volatile uint64_t native_gop_wait_ring[64][3] __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_gop_wait_ring_count;
+__attribute__((weak, visibility("hidden"))) volatile uint64_t native_gop_wait_ring[64][3];
 extern volatile uint32_t native_gop_wait_reasons[4] __attribute__((weak_import));
 extern char *PE_boot_args(void);
 extern char boot_log_autoreset_text[200];
@@ -129,7 +129,7 @@ enum {DiagRings = 4194304};
 static char *rings_text;
 static size_t rings_len;
 static uint32_t rings_keep;
-extern uint32_t native_gpu_trace_snapshot(void *,uint32_t) __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) uint32_t native_gpu_trace_snapshot(void *p,uint32_t n) {(void)p;(void)n; return 0;}
 static void *gpu_trace_data[1];
 static uint32_t gpu_trace_size[1];
 static const char *gpu_trace_name[1]={"gpu.trace.bin"};
@@ -231,8 +231,8 @@ enum {VsyncRing = 65536};
 // domains 0 the A510s, 1 the A715/A710s, 2 the X3.
 struct cpufreq_rec {uint64_t abs; uint16_t vote_mhz[3], state_mhz[3], busy_pm[3]; uint16_t flags; uint32_t reserved;};
 _Static_assert(sizeof(struct cpufreq_rec) == 32, "cpufreq record");
-extern struct cpufreq_rec *native_cpufreq_ring __attribute__((weak_import));
-extern volatile uint32_t native_cpufreq_count __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) struct cpufreq_rec *native_cpufreq_ring;
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_cpufreq_count;
 enum {CpuFreqRing = 32768};
 // The client sampler (BootUiTraceProbe.c): kernel.client.bin is its ring in time order (16-byte header "CLI1", u32 total, u32 kept, u32 flags;
 // then 128-byte records {u64 microseconds, i32 pid, u16 state, i16 priority, u32 context switches, i32 mach_msg peer pid, u64 CPU time
@@ -319,7 +319,7 @@ static void latency_tick(void) {
 // width, height, stride, then BGRX rows). Shots of one burst show a picture that alternates between frames; a static scene repeats. They are
 // analysed by code only.
 enum {DiagShots = 24, DiagBurst = 6, DiagBurstEvery = 10};
-extern volatile uint64_t native_gop_virtual __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) volatile uint64_t native_gop_virtual;
 __attribute__((weak, visibility("hidden"))) void native_legacy_direct_snapshot(void) {}   // direct scanout: the surface on screen into the boot memory
 static uint8_t *shot_data[DiagShots];
 static uint32_t shot_time[DiagShots], shot_index[DiagShots], shot_w, shot_h, shot_taken, shot_first, shot_first_read, shots_kept;

@@ -526,7 +526,7 @@ static void cs_refresh(void) {
   if(cs_task[i])cs_note_target(cs_task[i],cs_pid[i],cs_names[i]);
  }
 }
-extern uint64_t native_gpu_role_thread(uint32_t,uint32_t) __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) uint64_t native_gpu_role_thread(uint32_t a,uint32_t b) {(void)a;(void)b; return 0;}
 // A running target's user registers at the sample instant: the user state saved in its PCB is the one of its last kernel entry, so a
 // thread busy in user code showed where it last entered the kernel (its system calls) instead of what it was running. A cross call to the
 // CPU it runs on interrupts it there; the handler copies the interrupted user PC, LR and FP when that CPU still runs it in user mode.
