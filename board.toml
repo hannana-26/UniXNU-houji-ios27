@@ -5,24 +5,42 @@ name = "houji"
 soc = "SM8650"
 soc_source = "sm8550"
 description = "Xiaomi 14 23127PN0CC (houji)"
-kit = "houji"
+# The device package (package/) is installed as kits/sheng, the name build-sheng-source-storage.py and build-arm-driver.py
+# search (as aston and shennong do). Board code keeps the sheng-* boot argument names.
+kit = "sheng"
 os_profile = "ios-27.0.1-24A446"
 
 [components]
-include = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot"]
+include = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock"]
+
+# The iOS root image (SHNGROOT manifest, OS and SystemOS windows, OS.vroot/SystemOS.vroot tables) is flashed over the whole
+# Android "userdata" partition (LUN 0, 4096-byte sectors). ShengUfs matches that GPT name (drivers/ShengUfs/RootLayout.h) and
+# keeps the log (sheng-log=1) and later the Data store at the END of the partition. Android data on userdata is lost.
+# REQUIRED_: first_lba/last_lba are placeholders. Read them from this phone's LUN 0 GPT before building userdata.
+[userdata]
+partition = "userdata"
+first_lba = 0
+last_lba = 0
+lba_bytes = 4096
+windows = [{ name = "OS", component = "OS" }, { name = "SystemOS", component = "Cryptex1,SystemOS" }]
 
 [kernel]
 defconfig = "houji_ios27_defconfig"
 archives = [
+  # Before any storage step: component:ShengUfs runs build-sheng-source-storage.py without --policy-dir.
+  "stage-aston-root-policies.py scripts/policies/ios-27.0.1-24A446",
   "build-corecrypto-14.py",
   "build-corecrypto-14.py --namespace",
   "component:ArmDTPlatform",
   "component:ArmCpu",
   "build-libpthread-kernel.py",
+  "component:ShengUfs",
+  "build-sheng-source-storage.py --policy-dir scripts/policies/ios-27.0.1-24A446",
+  "component:RamBlock",
   "build-fileset-release-reference.py --tree . --lto",
 ]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8550.config", "os:configs/ios.config"]
-patch_series = ["arch:patches/xnu/series", "soc:patches/xnu-12377/series", "os:patches/xnu/series", "device:patches/xnu/series"]
+patch_series = ["arch:patches/xnu/series", "soc:patches/xnu-12377/series", "os:patches/xnu/series", "device:patches/xnu/series", "device:patches/xnu-12377/series"]
 
 [device_tree]
 source = "device:dts/houji.dts"
@@ -55,6 +73,8 @@ kernel-ctrr-to-be-enabled = 0
 volume = "HOUJIPAY"
 size_mib = 96
 loader = "firmware"
+# Signed 544-byte VerifiedRoot headers of the iPhone17,2 24A446 OS/SystemOS windows (aston's owner-signed policies, same images).
+root_policies = "{tree}/build/sheng-source-storage/root-policies.bin"
 title = "houji iOS 27.0.1: UniXNU"
 # One contiguous 2 GiB window at 0x8c0000000 (lonzzi houji UEFI HighRAM, iOS16 flow reached XNU there; author claim). Must equal the DTS memory node.
 dram_size = "0x80000000"
@@ -64,7 +84,9 @@ dram_size = "0x80000000"
 panic_screen = false
 tools = true
 trust_cache_sha256 = []
-kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "cpus=1", "armcpu-diagnostics=1"]
+kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "cpus=1", "armcpu-diagnostics=1",
+  # Storage stage: source UFS root on userdata, UFS diagnostics, boot log in the last 32 MiB of userdata.
+  "native-source-storage=1", "native-ufs-root=1", "native-ufs-diagnostics=1", "sheng-log=1"]
 
 [payload.adt]
 # T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.
