@@ -12,21 +12,30 @@ storage defconfig compiles CONFIG_XNU_OWNER_DATA_MOUNT=y, and the payload step
 refuses to build without the seed; the kernel publishes its persistent Data
 volume from it (RamBlock carries it as initrd, packed_data_ramdisk = false).
 
-Steps, all official procedures: stream the pinned iPhone17,2 24A446 OS member
-through `./unixnu ipsw fetch OS` (the cache is shared with the later payload
-step), decrypt AEA exactly as scripts/unixnu/ipsw.py decrypt_aea does, attach
-the OS volume read-only, build a first-install APFS Data seed with the official
-scripts/make-data-seed.py, then pin the packed seed's volume UUID to the value
-the kernel compiles (CONFIG_XNU_OWNER_DATA_VOLUME_UUID) with the set_volume_uuid
-procedure of the official make-macos-data-seed.py. Because the UUID is pinned,
-a seed regenerated in a later run stays the installation the kernel expects and
-no kernel rebuild is ever triggered by a seed change.
+Steps: stream the pinned iPhone17,2 24A446 OS member through
+`./unixnu ipsw fetch OS` (the cache is shared with the later payload step),
+decrypt AEA exactly as scripts/unixnu/ipsw.py decrypt_aea does, attach the OS
+volume read-only, and build a first-install APFS Data seed: the container is
+created at its final size and holds the OS volume's initial /private/var — the
+proven hosted-runner approach of UniXNU-NX769J scripts/build-data-seed.py
+(recorded in UniXNU docs/devices/nx769j.md), whose copy loop and empty
+directories follow the official scripts/make-data-seed.py. The container is
+created at size instead of grown because the official grow step's
+attach-and-resize round does not register the container on hosted runners, and
+APFS lays small containers out differently anyway.
+
+Finally the packed seed's volume UUID is pinned to the value the kernel compiles
+(CONFIG_XNU_OWNER_DATA_VOLUME_UUID) with the set_volume_uuid procedure of the
+official make-macos-data-seed.py. Because the UUID is pinned, a seed regenerated
+in a later run stays the installation the kernel expects and no kernel rebuild
+is ever triggered by a seed change.
 """
 import argparse
 import json
 import os
 import plistlib
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -37,7 +46,10 @@ from pathlib import Path
 TREE = Path.cwd()
 DATA_UUID = uuid.UUID('2A5E9027-D9E1-40F9-983C-41BD3F1994F5')
 GIB = 8
-BUILD = '24A446'
+# The directories the userland expects under the Data root even when the OS
+# image has none (official make-data-seed.py list).
+EMPTY_DIRS = ('keybags', 'mobile/tmp', 'tmp', 'run', 'containers/Bundle',
+              'containers/Data/System', 'containers/Shared/SystemGroup', 'containers/Temp')
 
 
 def log(message):
@@ -88,6 +100,31 @@ def decrypt_aea(path):
     record.write_text(json.dumps({'member': source.get('member'), 'aea_sha256': source.get('sha256'),
                                   'size': out.stat().st_size, 'sha256': sha256_file(out)}, indent=2) + '\n')
     return out
+
+
+def copy_var(source, target):
+    """The OS volume's initial /private/var, as the official make-data-seed.py copies it.
+
+    staged_system_apps is skipped (it only bloats the seed), directories keep
+    their modes, symlinks stay symlinks; copy2 does not preserve owners, as in
+    the official script and the proven nx769j runner seed.
+    """
+    copied = 0
+    for current, dirs, files in os.walk(source, followlinks=False):
+        dirs[:] = [name for name in dirs if name != 'staged_system_apps']
+        destination = target / Path(current).relative_to(source)
+        destination.mkdir(exist_ok=True)
+        destination.chmod(stat.S_IMODE(Path(current).stat().st_mode))
+        for name in list(dirs) + files:
+            src, dst = Path(current) / name, destination / name
+            if src.is_symlink():
+                dst.symlink_to(os.readlink(src))
+                if name in dirs:
+                    dirs.remove(name)
+            elif src.is_file():
+                shutil.copy2(src, dst)
+                copied += 1
+    return copied
 
 
 def fletcher64(data):
@@ -159,18 +196,38 @@ def main():
     try:
         if not (mount / 'sbin/launchd').is_file() or not (mount / 'private/var').is_dir():
             raise SystemExit('the attached OS image is not an IPSW OS volume')
+        # Create the APFS container at its final size (the proven hosted-runner
+        # approach of UniXNU-NX769J scripts/build-data-seed.py) instead of
+        # creating it small and growing it like the official make-data-seed.py:
+        # the grow step's attach-and-resize round does not register the container
+        # on hosted runners, and APFS lays small containers out differently anyway.
+        raw = work / 'seed.cdr'
+        subprocess.run(['hdiutil', 'create', '-size', f'{GIB}g', '-layout', 'NONE', '-fs', 'APFS',
+                        '-volname', 'Data', '-type', 'UDTO', str(raw)], check=True)
+        volume = work / 'mount'
+        volume.mkdir()
+        attached_volume = plistlib.loads(subprocess.check_output(
+            ['hdiutil', 'attach', '-nobrowse', '-owners', 'off', '-mountpoint', str(volume), '-plist', str(raw)]))
+        try:
+            log(f'copying the initial /private/var into the seed ({GIB} GiB container)')
+            copied = copy_var(mount / 'private/var', volume)
+            for name in EMPTY_DIRS:
+                (volume / name).mkdir(parents=True, exist_ok=True)
+            (volume / 'tmp').chmod(0o1777)
+            log(f'copied {copied} files')
+        finally:
+            subprocess.run(['hdiutil', 'detach', attached_volume['system-entities'][0]['dev-entry']], check=False)
+        header = raw.open('rb').read(4096)
+        if header[32:36] != b'NXSB':
+            raise SystemExit('the seed image does not start with an APFS container')
         seed = work / 'data.dbr'
-        # seed-data-grow.py keeps its scratch image in a tempfile under the tree's build/
-        # directory (the workflow's own seed path creates it the same way).
-        (TREE / 'build').mkdir(exist_ok=True)
-        log(f'building the first-install seed with the official make-data-seed.py (--gib {GIB})')
-        subprocess.run([sys.executable, str(TREE / 'scripts/make-data-seed.py'), str(mount), str(seed),
-                        '--gib', str(GIB), '--build', BUILD], check=True)
+        log('packing the seed with the official packed_ramdisk writer (only nonzero pages travel)')
+        sys.path.insert(0, str(TREE / 'drivers/DarwinBoot/Test'))
+        import packed_ramdisk
+        packed_ramdisk.pack(raw, seed)
     finally:
         subprocess.run(['hdiutil', 'detach', attached['system-entities'][0]['dev-entry']], check=False)
     pin_packed_volume_uuid(seed, DATA_UUID)
-    sys.path.insert(0, str(TREE / 'drivers/DarwinBoot/Test'))
-    import packed_ramdisk
     metadata, _ = packed_ramdisk.inspect(seed)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.unlink(missing_ok=True)
