@@ -58,7 +58,7 @@ dram_size = "0x80000000"
 panic_screen = false
 tools = true
 trust_cache_sha256 = []
-kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120"]
+kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0"]
 
 [payload.adt]
 # T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.
