@@ -29,6 +29,9 @@ aio['k'].append({'p':[['name',b'intc\0',0],['compatible',b'arm,gic-v3\0',0],['in
   ['redistributor-stride',struct.pack('<Q',0x40000),0]],'k':[]})
 dfl=kid['defaults']
 if not any(p[0]=='vmm-present' for p in dfl['p']): dfl['p'].append(['vmm-present',struct.pack('<I',1),0])
+if not any(p[0]=='kern.maxvnodes' for p in dfl['p']): dfl['p'].append(['kern.maxvnodes',struct.pack('<I',33792),0])
+ch=kid['chosen']
+if not any(p[0]=='kernel-ctrr-to-be-enabled' for p in ch['p']): ch['p'].append(['kernel-ctrr-to-be-enabled',struct.pack('<I',0),0])
 print('defaults',[(p[0],p[1].hex()) for p in dfl['p']])
 print('psci' in kid, 'cpus', len(kid['cpus']['k']))
 out=ser(root); r2,e2=parse.__wrapped__(out) if False else (None,None)

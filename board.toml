@@ -43,6 +43,11 @@ thin-bezel = 1
 [adt.defaults.u32]
 sleep-disabled = 1
 vmm-present = 1
+"kern.maxvnodes" = 33792
+
+[adt.chosen.u32]
+# SM8650 has no CTRR (vermeer/aston/sheng): without it sdt_init asserts machine_routines.c:3379.
+kernel-ctrr-to-be-enabled = 0
 
 # Stage-0 payload (RAM only, no UFS write). Values marked "unverified" come from peridot/lonzzi and are checked at the
 # DarwinBoot / kernel-entry stages of the bring-up order.
