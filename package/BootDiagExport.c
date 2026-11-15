@@ -111,11 +111,11 @@ static const char *const diag_roots[] = {
 };
 extern void qsort(void *, size_t, size_t, int (*)(const void *, const void *));
 // The kernel's rings, as text (kernel.rings.txt), formatted at the scan so its length is known and emitted as it was then.
-extern volatile uint64_t (*native_legacy_ring)[2] __attribute__((weak_import));
-extern volatile uint32_t native_legacy_ring_cap __attribute__((weak_import));
-extern volatile uint32_t native_legacy_ring_count __attribute__((weak_import));
-extern volatile uint64_t native_legacy_snap[64][2] __attribute__((weak_import));
-extern volatile uint32_t native_legacy_snap_count __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) volatile uint64_t (*native_legacy_ring)[2];
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_legacy_ring_cap;
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_legacy_ring_count;
+__attribute__((weak, visibility("hidden"))) volatile uint64_t native_legacy_snap[64][2];
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_legacy_snap_count;
 extern volatile uint32_t native_legacy_swapstat[16] __attribute__((weak_import));
 extern volatile uint64_t (*native_adreno_tl)[8] __attribute__((weak_import));
 extern volatile uint32_t native_adreno_tl_cap __attribute__((weak_import));
@@ -223,8 +223,8 @@ __attribute__((weak, visibility("hidden"))) const struct touch_trace_row *sheng_
 extern unsigned native_legacy_prepare_report(char *,unsigned) __attribute__((weak_import));
 static const struct touch_trace_row *path_trace;
 static uint32_t path_total, path_kept;
-extern uint64_t *native_legacy_vsync_ring __attribute__((weak_import));
-extern volatile uint32_t native_legacy_vsync_count __attribute__((weak_import));
+__attribute__((weak, visibility("hidden"))) uint64_t *native_legacy_vsync_ring;
+__attribute__((weak, visibility("hidden"))) volatile uint32_t native_legacy_vsync_count;
 enum {VsyncRing = 65536};
 // CPU frequency governor windows (CpuFreqProbe.cpp), kernel.cpufreq.bin: header "CPF1", total, kept, 0; then 32-byte records
 // {u64 microseconds, u16 voted MHz[3], u16 running MHz[3], u16 busiest CPU per mille[3], u16 flags (1 touch boost, 2 frame floor), u32 0},
@@ -320,7 +320,7 @@ static void latency_tick(void) {
 // analysed by code only.
 enum {DiagShots = 24, DiagBurst = 6, DiagBurstEvery = 10};
 extern volatile uint64_t native_gop_virtual __attribute__((weak_import));
-extern void native_legacy_direct_snapshot(void) __attribute__((weak_import));   // direct scanout: the surface on screen into the boot memory
+__attribute__((weak, visibility("hidden"))) void native_legacy_direct_snapshot(void) {}   // direct scanout: the surface on screen into the boot memory
 static uint8_t *shot_data[DiagShots];
 static uint32_t shot_time[DiagShots], shot_index[DiagShots], shot_w, shot_h, shot_taken, shot_first, shot_first_read, shots_kept;
 static void shot_tick(unsigned now) {
