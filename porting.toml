@@ -1,189 +1,208 @@
 schema_version = 1
 
 [device]
-name = "example"
-soc = "SM8550"
-os_profile = "ipados-17.7.11-21H461"
-summary = "Device template. Complete each area with board-specific inputs and evidence."
+name = "houji"
+soc = "SM8650"
+os_profile = "ios-27.0.1-24A446"
+summary = "Xiaomi 14 23127PN0CC (houji)。iOS 27.0.1 (24A446, arm64e) 移植,APFS+SHNGROOT 官方路线(与 sheng 同)。r46 的 APFS gate 错绑 panic 已修复并实机验证(c1d3026);r50 的信任包(f93a554)使 launchd exec 成功、dyld 映射 ~930 MB 后死于用户态 SIGSEGV(Initproc failed to start -- exit reason namespace 2 subcode 0xb),已闯入 Stage 7。当前第一步:用 UEFI sheng-log 读取器读回 userdata 尾部日志窗口定位 SIGSEGV(工程记录在仓库外 D:\yizhishouji\交接文档_最新.md 与 进度记录_2026-11-13.md)。"
 
 [[area]]
 id = "configuration"
-status = "planned"
-components = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
-paths = ["board.toml", "feeds.toml", "configs/**", ".gitmodules", ".github/**", ".gitignore"]
-inputs = ["Identify the configuration hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for configuration."]
-procedure = ["Follow the configuration stage in the porting guide and record the actual commands."]
-findings = ["Collect the first configuration observation, its cause when established, and the resulting implementation decision."]
-completion = ["All source pins resolve; every selected component has a record; status shows the intended overrides and patch order."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required configuration inputs before implementation."]
-evidence = []
+status = "device-verified"
+components = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot"]
+paths = ["board.toml", "feeds.toml", "configs/**", "dts/**", "patches/**", "profiles/**", "scripts/policies/**", "scripts/stage-aston-root-policies.py"]
+inputs = ["SM8650 / houji 的 board.toml 身份:name=houji、soc=SM8650、os_profile=ios-27.0.1-24A446、kit=sheng(package/ 作为 kits/sheng 安装)", "soc_source=sm8550 临时替代(SM8650 与 SM8550 的 UFS GCC 偏移一致,shennong 同例;UniXNU-sm8550-common 本地未核实)", "本地供体 IPSW 是 iPhone18,2 的 iOS 27.0.1;profile 按 iPhone17,2 处理(偏差已记录)", "XnuPrelink fixture:patches/xnuprelink/fileset-houji-24A446-symbols.json,25→189 函数+22 data(并入 aston d94ap,同 kernelcache sha256 fa07057b)"]
+configuration = ["board.toml:schema_version=2;[kernel].archives 用 component: 语法 + kit 提供的构建脚本;[payload] kernel_args 带 native-source-storage=1/native-ufs-root=1/native-ufs-diagnostics=1/sheng-log=1", "defconfig=houji_ios27_defconfig(configs/);config_fragments=common/sm8550/ios", "[payload.runtime] trust_components=StaticTrustCache、Cryptex1,SystemTrustCache、Cryptex1,AppTrustCache;gpu_addon=false", "[payload.adt] chip_id=0x8140 未核实;packed_data_ramdisk=true(r1d85a10 教训:非打包种子在 darwinboot 窗口展开触发 EFI_BAD_BUFFER_SIZE)", "dts:GIC 节点补 AAPL,phandle(1d51174,XNU 只从 AAPL,phandle 注册中断,peridot marble-milacy 先例)"]
+procedure = ["CI 主仓 macos.yml:device_repository=hannana-26/UniXNU-houji-ios27、device_ref=storage、defconfig=houji_ios27_defconfig、steps=kernel payload", "pre_build 必须:git submodule update --init kits/XnuPrelink;cp $DEVICE_DIR/patches/xnuprelink/*.json kits/XnuPrelink/fixtures/(没有这句 fixture 不进构建,run 43793597183 教训);brew install ipsw;make-houji-data-seed.py 生成 Data seed", "构建产物经 scripts/package.sh 校验链;本地自检 gatecheck47.py(GOT 绑定)+ chkadt.py(ADT)"]
+findings = ["r46 实机 APFS gate 错绑 panic 的根因是 fixture 缺口:把 aston d94ap fixture(同 kernelcache sha)并入后 r47 实机验证 panic 消失(c1d3026)", "XnuPrelink fixture 按 kernelcache sha256 匹配,不一致不生效;2 条实机验证绑定(0xab86b04 _ml_get_hwclock、0xb0de1d8 apple_m2_property shim)保留并注记 revisit", "fixture 没拷进 kits/XnuPrelink/fixtures 时构建照常成功但绑定缺失——CI 必须带 cp 步骤", "r49/r50 实证:amfi_get_out_of_my_way=1 只旁路 AMFI,内核 exec 签名校验独立存在;必须用 trust bundle(f93a554)"]
+completion = ["所有源码 pin 可解析(unixnu.lock);组件与 patch 顺序在记录中可见;CI 产出 kernel.macho 与 payload.img;实机 r50 走到用户态 exec"]
+limits = ["chip_id 0x8140、DTB 来源(ROM 215/设备 212)、UNIQUE_CHIP_ID 未核实/未设置;[userdata] first_lba/last_lba 仍是占位 0(内核运行时读 GPT)"]
+next_action = ["r50 稳定后 revisit 两条实机验证绑定(0xb0de1d8、0xab86b04);补 chip_id 与 UNIQUE_CHIP_ID 核实"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\进度记录_2026-11-13.md(2026-11-16 r47/r50 各节)", result = "r47:gate panic 消失;r50:launchd exec 成功进入 dyld", command = "fastboot boot boot-houji-r47-probe.img / boot-houji-r50-probe.img", revision = "c1d3026(fixtures)/f93a554(trust bundle)" },
+  { kind = "host", reference = ".github/workflows/package.yml + 主仓 macos.yml run 43797480096", result = "CI 产出 kernel.macho+payload.img,fileset_match 逐条验 original_sha256 全过", command = "gh workflow run macos.yml -R hannana-26/UniXNU …(交接文档 §6 完整命令)", revision = "f93a554" },
+]
 
 [[area]]
 id = "firmware"
-status = "planned"
+status = "device-verified"
 components = []
-paths = ["proprietary-files.txt", "scripts/extract-files.py", "scripts/gen-touch-firmware.py"]
-inputs = ["Identify the firmware and boot hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for firmware and boot."]
-procedure = ["Follow the firmware and boot stage in the porting guide and record the actual commands."]
-findings = ["Collect the first firmware and boot observation, its cause when established, and the resulting implementation decision."]
-completion = ["Firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented memory reservations."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required firmware and boot inputs before implementation."]
-evidence = []
+paths = ["scripts/uefi/**", "board.toml", "proprietary-files.txt"]
+inputs = ["Mu-Silicium houjif 树(WSL /root/uefi-asm,不在本仓库)构建的 UEFI;UEFI 内嵌 UniXNULib(Main/Menu/Ui/ShengLog 等)", "boot image:ANDROID 头(mkbootimg header_version=4,本地 repack)+ gzip 内核段(BootShim+FD)+ 追加 DTB;DTB 来自 ROM 215 与设备 212 的偏差已记录;OEM DXE 来自 OnePlus 13R(偏差)", "UEFI 诊断探针 ShengLog.c 目前在 D:\yizhishouji\work\ShengLog.c(v4 草稿),未进设备仓库(纲领三★例外:探针类)"]
+configuration = ["fastboot boot 临时启动;不刷 boot/vendor_boot", "[bootimg.image] base/offsets/pagesize=4096;board.toml 记 header_version=0,本地 repack 实际用 v4+追加 DTB(差异在 findings)", "panic 屏由 payload 内 entry-probe(xnu-panic-screen.c)渲染;[payload] panic_screen=false 时靠探针"]
+procedure = ["WSL:/root/uvenv/bin/python3 build_uefi.py -d houjif -r DEBUG;产物 Mu-houjif-0.img 经 mk15.py 与 payload-r50 组装成 boot-houji-r15-shlog4.img", "试机前后用 work/uefiid.py(内嵌 UEFI kernel 段 sha)、work/verifyboot.py(payload 尾哈希+字符串)、work/lzmapeek.py(FV LZMA 解压字符串)三道校验"]
+findings = ["r47-r50 四轮实机:UEFI 菜单/自动启动/panic 屏渲染稳定(406x720 录屏)", "OEM UFS 驱动每次外部块读打印一轮失败转储并直接画帧缓冲(多块重叠、盖写控制台文本);UEFI 直读存储不在官方流程内,是本仓补的新空缺", "r14-dump 内嵌 UEFI 的构建无法从当前树复现(sha 8a3b26d3 vs DEBUG 296eb18f/RELEASE b3dfc635)——历史产物构建未钉版;已建立三道校验流程补救", "UniXNULog 只走 DEBUG+串口,手机不可见;上屏只能 Print(ConOut),而官方 UI 图形模式绝不经 ConOut——Print 在本机固件的上屏性以 v2 实机(v2 两个头行上屏)为准,仍属脆弱通路"]
+completion = ["固件构建、进入 UniXNU、稳定显示菜单、panic 屏可读;sheng-log 窗口读写链路的写侧(内核)已实机工作(r50 有槽写入)"]
+limits = ["UEFI 固件树不在本仓库无法 CI 复现;OEM UFS 驱动行为不可假设(每次读刷屏,1MiB 读疑似被拒)"]
+next_action = ["ShengLog v4(按头直读+IoAlign 对齐分配+4096 对齐魔数校验)构建并试机;读回日志后把读取器等价改动评估落进设备仓库"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\进度记录_2026-11-13.md(2026-11-16 r14 复盘)", result = "r14-dump(UEFI v3+payload-r50)完整走完:菜单→panic,读取器零输出(判据缺陷,离线已复现)", command = "fastboot boot boot-houji-r14-dump.img", revision = "1f8fe334d87f692466859cd2ad16d4714adc99abd7700b59235a8385adc296d4" },
+]
 
 [[area]]
 id = "cpu"
-status = "planned"
-components = []
-paths = ["package/CpuFreq*", "scripts/*armcpu*"]
-inputs = ["Identify the cpu and interrupts hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for cpu and interrupts."]
-procedure = ["Follow the cpu and interrupts stage in the porting guide and record the actual commands."]
-findings = ["Collect the first cpu and interrupts observation, its cause when established, and the resulting implementation decision."]
-completion = ["Every enabled CPU reaches its entry checkpoint and timer/IPI handling works on each enabled CPU."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required cpu and interrupts inputs before implementation."]
-evidence = []
+status = "device-verified"
+components = ["ArmCpu"]
+paths = ["board.toml", "dts/houji.dts", "configs/**"]
+inputs = ["SM8650 CPU 拓扑与 PSCI(架构 timer,PSCI method SMC,与 shennong 同 SoC)", "AppleARMPlatform 的 AppleARMCPU personality 按 IONameMatch=cpu 前缀认领"]
+configuration = ["payload args:cpus=1、armcpu-diagnostics=1;[payload.adt] kernel-ctrr-to-be-enabled=0(SM8650 无 CTRR,vermeer/aston/sheng 同)"]
+procedure = ["fastboot boot 后经 panic 屏/日志观察 AppleARMCPU 认领与 bsd_init 推进"]
+findings = ["单核下 XNU 从内核入口一路走到用户态 exec(r50):CPU 认领、timer、IPI 无阻塞", "副核未启用(cpus=1)"]
+completion = ["启用的 CPU 到达入口检查点,timer/IPI 工作"]
+limits = ["只验证单核;副核上线与频率管理未开始"]
+next_action = ["launchd SIGSEGV 定位后再评估副核"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\交接文档_最新.md §3", result = "r50 launchd exec 成功(用户态),说明 cpu0/timer 链路可用", command = "fastboot boot boot-houji-r50-probe.img", revision = "f93a554" },
+]
 
 [[area]]
 id = "memory"
-status = "planned"
+status = "implemented"
 components = []
-paths = ["dts/**", "package/*Smmu*", "package/*Memory*", "scripts/*smmu*", "scripts/*memory*"]
-inputs = ["Identify the memory and dma hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for memory and dma."]
-procedure = ["Follow the memory and dma stage in the porting guide and record the actual commands."]
-findings = ["Collect the first memory and dma observation, its cause when established, and the resulting implementation decision."]
-completion = ["All handoff regions are accounted for and each enabled DMA engine accesses its allocated range with the documented cache policy."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required memory and dma inputs before implementation."]
-evidence = []
+paths = ["board.toml", "dts/houji.dts"]
+inputs = ["DRAM:2 GiB 连续窗口 0x8c0000000 附近(lonlzi houji UEFI HighRAM 先例,作者自述,须等于 DTS memory 节点);dram_size=0x80000000", "r19:8 GiB owned_memory_size 溢出 XNU 16 页 bootstrap 表(start_first_cpu 自环),回落 = dram_size"]
+configuration = ["[payload] dram_size=0x80000000;[payload.adt] owned_memory_size=0x80000000;DarwinBoot 窗口 2 GiB"]
+procedure = ["panic 屏 pages/free 计数核对内存状态(r50:dyld 映射 ~930 MB 后 Free=0x34bef)"]
+findings = ["panic 屏计数与预期量级一致;未出现内存类 panic", "packed_data_ramdisk=true 避免 8 GiB 种子展开越窗(r1d85a10)"]
+completion = ["handoff 区域有归属;DarwinBoot/内核/DarwinBoot 窗口边界未越界"]
+limits = ["未做 DMA 一致性压力测试;SMMU 侧未单独审计"]
+next_action = ["Data 卷持久化(persistent_data)评估时补内存审计"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\build\bootimg-r9\r14v3-ocr.txt([254s] 起帧)", result = "panic 屏 pages=0x786? Free=0x34bef,数值合理", command = "fastboot boot boot-houji-r14-dump.img", revision = "1f8fe334d87f692466859cd2ad16d4714adc99abd7700b59235a8385adc296d4" },
+]
 
 [[area]]
 id = "storage"
-status = "planned"
-components = []
-paths = ["drivers/ShengUfs", "scripts/*ufs*", "scripts/*storage*", "scripts/*userdata*", "scripts/*root*"]
-inputs = ["Identify the storage and root hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for storage and root."]
-procedure = ["Follow the storage and root stage in the porting guide and record the actual commands."]
-findings = ["Collect the first storage and root observation, its cause when established, and the resulting implementation decision."]
-completion = ["Host: register, clock, link and SMMU facts match the board inventory.", "Reads: SCSI capacity, GPT and known blocks are correct; OS/SystemOS windows stay within userdata.", "Root: the configured volume mounts and launchd starts. Persistence: writes survive reboot within the allocated Data region."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required storage and root inputs before implementation."]
-evidence = []
+status = "device-verified"
+components = ["ShengUfs", "RamBlock"]
+paths = ["drivers/ShengUfs/**", "package/SourceStorage.cpp", "package/SourceRootBinding.cpp", "package/SourceRootPolicies.cpp", "scripts/make-houji-data-seed.py", "scripts/make-vroot-tables.py", "scripts/policies/ios-27.0.1-24A446", "board.toml"]
+inputs = ["UFS LUN0,4096 字节逻辑块;根卷=官方 IPSW 的 iOS 系统卷按 SHNGROOT 组装后整写 Android userdata 分区(build/userdata-r1/userdata-root.img,15.25 GiB,已刷)", "根策略:iPhone17,2 24A446 OS/SystemOS 窗口的 544 字节签名头+公钥(scripts/policies/ios-27.0.1-24A446,aston 同镜像 owner 策略)", "Data:RAM seed(make-houji-data-seed.py,packed_data_ramdisk=true)"]
+configuration = ["board.toml [userdata]:partition=userdata、lba_bytes=4096、first_lba/last_lba 占位 0(内核运行时读 GPT);windows=OS/Cryptex1,SystemOS", "payload args:native-source-storage=1、native-ufs-root=1、native-ufs-diagnostics=1、sheng-log=1(日志窗口=userdata 尾 8192*4KiB)"]
+procedure = ["写卷:fastboot flash userdata userdata-root.img(sparse 分块,不覆盖,新产物新编号)", "验证:host 侧 work/uuid47.py 读 userdata-root.img(卷 UUID=E3F4AED0-4454-4D5B-833C-E27E99C4F67B,卷名 Rave24A446.D94OS,SHNGROOT v2 manifest 四窗 sha256 与 profile 一致);实机 fastboot boot 看 A 挂载行与 [cryptex os] 阶段", "日志读回:UEFI ShengLog 读取器(见 diagnostics)"]
+findings = ["r46 APFS gate 错绑 panic 已修(c1d3026)且 r47 实机验证;r50 信任包后 launchd exec 存活、dyld 映射 ~930 MB——SHNGROOT 挂载链路实机成立", "OS 卷 UUID 就是实卷 UUID,不是 cupid 拷贝错(uuid47.py 关闭待核实 1)", "内核信任包(f93a554)是 exec 签名校验的必要条件,AMFI 旁路不够(r48/r49 实证)", "sheng-log 写侧在真机工作:槽环/头按 2s 轮写(BootLog.c v4=148B 头);读侧 v1-v3 读取器未读到(v3 判据缺陷,离线复现;待 v4 按头直读)"]
+completion = ["Host:GPT/卷/manifest 校验过。Reads:SCSI 容量、GPT、OS/SystemOS 窗口落在 userdata 内。Root:配置卷挂载且 launchd 启动(r50)", "持久化:RAM seed,重启不保(见 limits)"]
+limits = ["无持久 Data 分区(persistent_data=false);first_lba/last_lba 占位;userdata 不可回 HyperOS(alien 格式化风险);launchd SIGSEGV 未定位"]
+next_action = ["UEFI v4 按头直读读回日志定位 SIGSEGV;之后评估 Data 持久化与 first_lba/last_lba 实测回填"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\交接文档_最新.md §3 r50 行", result = "launchd exec 存活,dyld 映射后 SIGSEGV(namespace 2 subcode 0xb)——根卷挂载与 exec 链路实机成立", command = "fastboot boot boot-houji-r50-probe.img", revision = "f93a554" },
+  { kind = "host", reference = "work/uuid47.py 输出(进度记录 2026-11-16)", result = "OS 卷 UUID/卷名/SHNGROOT v2 manifest 逐字节校验一致", command = "wsl python3 work/uuid47.py build/userdata-r1/userdata-root.img", revision = "userdata-r1(已刷,不重刷)" },
+]
 
 [[area]]
 id = "display"
-status = "planned"
+status = "device-verified"
 components = []
-paths = ["package/*Display*", "package/*Framebuffer*", "package/*Backlight*", "package/AppleARMBacklight.cpp", "package/GeniI2c*", "scripts/*display*", "scripts/*gop*", "scripts/*framebuffer*"]
-inputs = ["Identify the display hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for display."]
-procedure = ["Follow the display stage in the porting guide and record the actual commands."]
-findings = ["Collect the first display observation, its cause when established, and the resulting implementation decision."]
-completion = ["A known frame appears with correct geometry and colors, then userland presentation and backlight controls work."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required display inputs before implementation."]
-evidence = []
+paths = ["package/BootLog.c", "board.toml"]
+inputs = ["面板经 UEFI GOP 工作(菜单/panic 屏均可见,录屏 406x720)", "XNU 自身无显示驱动;panic 屏由 entry-probe(xnu-panic-screen.c)直接画帧缓冲"]
+configuration = ["[payload] panic_screen=false(本内核 panic padding 不匹配,r12/r13 教训);panic 屏由探针渲染;serial=3 只走串口(手机无串口线)"]
+procedure = ["录屏→work/fr47.py 抽帧→OCR(ocr3.py/ocr46.py)或 zoom14.py 放大裁剪直接读图"]
+findings = ["panic 屏是本阶段最有效诊断面:r47-r50 的死点全部由屏读出", "内核 printf 不上屏(serial=3);OEM 驱动直接画帧缓冲会与控制台文本互相盖写", "无触摸:菜单靠定时自动启动(UuXNU 菜单 Esc 可停)"]
+completion = ["已知画面以正确几何与颜色出现"]
+limits = ["无 XNU 显示驱动、无背光控制、无用户态呈现;无触摸输入"]
+next_action = ["launchd 死因定位后再攻显示驱动"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\build\bootimg-r9\r14v3-ocr.txt", result = "r50/r14 panic 屏文本完整可读(Initproc failed to start -- exit reason namespace 2 subcode 0xb)", command = "fastboot boot + 录屏抽帧", revision = "1f8fe334d87f692466859cd2ad16d4714adc99abd7700b59235a8385adc296d4" },
+]
 
 [[area]]
 id = "input"
 status = "planned"
 components = []
-paths = ["drivers/ShengHidInput", "drivers/ShengNovatekTouch", "package/*Touch*", "package/*Button*", "scripts/*touch*", "scripts/*hid*"]
-inputs = ["Identify the input hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for input."]
-procedure = ["Follow the input stage in the porting guide and record the actual commands."]
-findings = ["Collect the first input observation, its cause when established, and the resulting implementation decision."]
-completion = ["Touches map to the display, simultaneous contacts keep stable IDs, release events arrive, and buttons produce expected HID reports."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required input inputs before implementation."]
+paths = ["package/TouchTrace.h"]
+inputs = ["触控未开始;遗留:STI device path 待查"]
+configuration = ["暂未配置"]
+procedure = ["待实现"]
+findings = ["当前无输入通道;菜单以定时自动启动规避"]
+completion = ["触控映射到显示坐标,多点稳定,按键产生 HID 报告"]
+limits = ["完全没有开始"]
+next_action = ["显示子系统可用后再接"]
 evidence = []
 
 [[area]]
 id = "gpu"
 status = "planned"
 components = []
-paths = ["package/*Gpu*", "package/*Gmu*", "package/*Adreno*", "scripts/*adreno*", "scripts/*gpu*", "scripts/*metal*", "scripts/*turnip*", "scripts/*air*"]
-inputs = ["Identify the gpu hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for gpu."]
-procedure = ["Follow the gpu stage in the porting guide and record the actual commands."]
-findings = ["Collect the first gpu observation, its cause when established, and the resulting implementation decision."]
-completion = ["GPU submissions complete, mapping/fence handling is correct, a known image renders, and the selected Metal client presents it."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required gpu inputs before implementation."]
+paths = ["board.toml"]
+inputs = ["Adreno 750;[payload.runtime] gpu_addon=false,houji GPU addon 未配置"]
+configuration = ["暂未配置:GPU addon/AGX 探针未选"]
+procedure = ["待实现"]
+findings = ["信任包只含原始 caches,无 GPU addon 成员"]
+completion = ["GPU 提交完成,Metal 客户端呈现"]
+limits = ["完全没有开始"]
+next_action = ["用户态稳定后再攻 GPU"]
 evidence = []
 
 [[area]]
 id = "network"
 status = "planned"
 components = []
-paths = ["drivers/Ath12kWifi", "package/*Wifi*", "package/MhiBoot*", "scripts/*wifi*", "scripts/*mhi*"]
-inputs = ["Identify the network hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for network."]
-procedure = ["Follow the network stage in the porting guide and record the actual commands."]
-findings = ["Collect the first network observation, its cause when established, and the resulting implementation decision."]
-completion = ["Scanning, association, address configuration and sustained receive/transmit traffic pass with the selected firmware."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required network inputs before implementation."]
+paths = ["package/WifiFirmware.c", "package/WifiFirmware.h"]
+inputs = ["板载 Wi-Fi 走 PCIe,未枚举"]
+configuration = ["暂未配置"]
+procedure = ["待实现"]
+findings = ["当前无网络栈"]
+completion = ["扫描/关联/收发通过"]
+limits = ["完全没有开始"]
+next_action = ["用户态稳定后再攻网络"]
 evidence = []
 
 [[area]]
 id = "audio"
 status = "planned"
 components = []
-paths = ["package/*Adsp*", "package/*Audio*", "package/*Gpr*", "package/QcomGlink*", "package/QcomMdt*", "package/QcomSmem*", "package/QcomSmp2p*", "scripts/*adsp*", "scripts/*audio*", "scripts/*gpr*"]
-inputs = ["Identify the audio hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for audio."]
-procedure = ["Follow the audio stage in the porting guide and record the actual commands."]
-findings = ["Collect the first audio observation, its cause when established, and the resulting implementation decision."]
-completion = ["Each declared route carries the selected audio format through playback or capture and handles start/stop correctly."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required audio inputs before implementation."]
+paths = ["package/ShengAudioAbi.h"]
+inputs = ["音频编解码/I2S 拓扑未采集"]
+configuration = ["暂未配置"]
+procedure = ["待实现"]
+findings = ["当前无音频路径"]
+completion = ["声道路由可用"]
+limits = ["完全没有开始"]
+next_action = ["用户态稳定后再攻音频"]
 evidence = []
 
 [[area]]
 id = "power"
 status = "planned"
 components = []
-paths = ["package/*Battery*", "package/*Battmgr*", "package/*Power*", "package/*PlatformPower*", "package/QcomQmp*", "package/QcomRpmh*", "package/QcomScm.h", "scripts/*power*", "scripts/*battery*", "scripts/*pmgr*"]
-inputs = ["Identify the power hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for power."]
-procedure = ["Follow the power stage in the porting guide and record the actual commands."]
-findings = ["Collect the first power observation, its cause when established, and the resulting implementation decision."]
-completion = ["Declared power controls and battery readings match observations; each claimed sleep/resume transition restores its dependent peripherals."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required power inputs before implementation."]
+paths = ["board.toml"]
+inputs = ["PMGR/电池/充电拓扑未采集;sheng-pmgr 类板级参数未启用"]
+configuration = ["暂未配置"]
+procedure = ["待实现"]
+findings = ["当前无电源管理路径"]
+completion = ["供电/时钟域按板级表工作"]
+limits = ["完全没有开始"]
+next_action = ["挂载完成后补 regulator 表"]
 evidence = []
 
 [[area]]
 id = "packaging"
-status = "planned"
+status = "device-verified"
 components = []
-paths = ["scripts/*payload*", "scripts/*image*", "scripts/*flash*", "patches/**", "package/Kit.toml"]
-inputs = ["Identify the image assembly hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for image assembly."]
-procedure = ["Follow the image assembly stage in the porting guide and record the actual commands."]
-findings = ["Collect the first image assembly observation, its cause when established, and the resulting implementation decision."]
-completion = ["Kernel and prelink succeed, payload contains all declared inputs, and the boot image matches the bootloader format and size limit."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required image assembly inputs before implementation."]
-evidence = []
+paths = ["scripts/package.sh", "scripts/make-houji-data-seed.py", "scripts/uefi/**", ".github/workflows/package.yml", ".github/workflows/porting-record.yml", "patches/**", "unixnu.lock"]
+inputs = ["CI 主仓 macos.yml 产出 kernel.macho 与 payload.img(payload-rXX 目录同序);boot image 由本地 repack(work/mk15.py)用 UEFI 模板+payload 组装", "payload 必须带完整 pre_build(submodule init + fixture 拷贝 + brew ipsw + data seed),device_ref=storage(master 停在 r45 时代)"]
+configuration = ["[bootimg.image] base=0x80000000 kernel_offset=0x8000 pagesize=4096;本地 repack 用 header_version=4+追加 DTB(board.toml 记 0,差异见 findings)", "产物不覆盖:boot-houji-rN-<tag>.img 新编号,payload-rXX 目录同序"]
+procedure = ["gh workflow run macos.yml(完整命令见交接文档 §6)→ dlart.sh 下载 → mk15.py 打包 → verifyboot.py/uefiid.py/lzmapeek.py 校验 → fastboot boot(等用户'开始')"]
+findings = ["连试三次 CI 才成功:43793597183 缺 pre_build、43795594697 缺 brew ipsw,43797480096 成功——pre_build 必须整段携带", "仓库 Actions 被禁(HTTP 422)时 Actions 页有绿色按钮自助恢复(fork 常规开关)", "r14-dump 的 UEFI 构建不可从当前树复现(8a3b26d3≠DEBUG 296eb18f≠RELEASE b3dfc635)——历史产物未钉版;已建立三道校验"]
+completion = ["内核与 prelink 成功;payload 含全部声明输入;boot image 被 bootloader 接受并启动(r47-r50/r14 五轮)"]
+limits = ["boot image 组装依赖本机 UEFI 模板;CI 只到 payload"]
+next_action = ["把 UEFI 构建输入(houjif 树)纳入可复现路径;ShengLog 等价改动评估落仓库"]
+evidence = [
+  { kind = "host", reference = "主仓 Actions run 43797480096", result = "CI kernel+payload 成功,产物组装后 r50 实机启动", command = "gh workflow run macos.yml -R hannana-26/UniXNU -f device_ref=storage …", revision = "f93a554" },
+  { kind = "device", reference = "D:\yizhishouji\build\bootimg-r1\boot-houji-r14-dump.img", result = "sha256 1f8fe334…96d4 实机完整走完菜单→panic", command = "fastboot boot boot-houji-r14-dump.img", revision = "1f8fe334d87f692466859cd2ad16d4714adc99abd7700b59235a8385adc296d4" },
+]
 
 [[area]]
 id = "diagnostics"
-status = "planned"
-components = []
-paths = ["scripts/check-*", "scripts/probe-*", "scripts/audit-*", "scripts/read-*", "scripts/prepare-*", "scripts/data/**", "package/tests/**", "package/*Tests*", "package/*Diagnostic*", "package/*Probe*", "package/Boot*", "package/linux-log/**", "unixnu.lock"]
-inputs = ["Identify the diagnostics hardware, resources and existing component interfaces for this board."]
-configuration = ["Record the board.toml fields, DTS properties and defconfig values used for diagnostics."]
-procedure = ["Follow the diagnostics stage in the porting guide and record the actual commands."]
-findings = ["Collect the first diagnostics observation, its cause when established, and the resulting implementation decision."]
-completion = ["Each claimed milestone has a reproducible command, a matching source/image revision and an accessible result."]
-limits = ["Hardware inputs and implementation are pending for this example board."]
-next_action = ["Inventory the required diagnostics inputs before implementation."]
-evidence = []
+status = "device-verified"
+components = ["BootProgress"]
+paths = ["package/BootLog.c", "package/BootDiagExport.c", "package/BootProcessProbe.c", "package/BootProcessWorker.c", "package/BootReset.c", "board.toml", "unixnu.lock"]
+inputs = ["XNU 无串口输出(serial=3),诊断靠 panic 屏与 sheng-log 窗口", "sheng-log 窗口:userdata 尾 8192*4KiB;头=块 0(v4=148B:magic/version/header_bytes/boot_id/first_lba/window/msg/slot 字段/tag/export/diag);msg buffer=块 1..32(128KiB,每轮重写,盘上 oldest-first 线性);槽=块 33 起每槽 16 块,LogPeriodMs=2000,槽序号取模 slot_count;头每轮最后写(slots_written 是提交点)", "外部工具链:work/sym.py(符号化)、fsent.py、dis46.py、fr47.py/ocr3.py/ocr46.py、zoom14.py、verifyboot.py/uefiid.py/lzmapeek.py、test_shlog4.py"]
+configuration = ["payload args:sheng-log=1、native-ufs-diagnostics=1;panic 屏由 entry-probe 渲染"]
+procedure = ["panic 轮:录屏→抽帧→OCR/放大→sym.py 符号化→fsent.py→dis46.py→四源扫描→动手", "日志读回轮:UEFI ShengLog 读取器(当前 v4 草稿:按头直读;四源扫描已定 IoAlign 对齐分配/4096 魔数对齐/version 分段门控三处修订)"]
+findings = ["v3 读取器判据缺陷(可打印率采样 4096B 与整个 Run*85 比较,Run>4818B 必拒)导致零命中,离线复现于 work/test_shlog4.py;msg buffer 盘上线性(写入端 copy_msgbuf 旋转紧缩),'环形尾部最新'假设不成立", "四源扫描交叉验证:头有 148B(houji/shennong)/156B(fuxi crash_*变体)/168B(sheng v5,msg_mode=1 流式环)三形态——读取器必须按 header_bytes+version 分段门控,魔数必须 4KiB 对齐", "r47-r50 的 panic 死点全部由 panic 屏符号化定位;符号化链路稳定", "r14-dump 产物考古:v3 确实在镜像并运行(lzmapeek 解 FV 字符串),零输出与判据缺陷一致;其构建不可复现(流程缺口,已建三道校验)"]
+completion = ["每个里程碑有可复现命令、revision 与可访问结果;sheng-log 写侧实机工作(r50 有槽),读侧 v4 待试机"]
+limits = ["读取器上屏通路(Print/ConOut)在本机固件的稳定性存疑(官方 UI 图形模式不走 ConOut);UEFI 探针未进设备仓库(纲领三★例外)"]
+next_action = ["v4 构建试机读回日志,定位 launchd SIGSEGV;读回成功后评估读取器/等价改动落进设备仓库并补 UEFI 构建输入可复现路径"]
+evidence = [
+  { kind = "device", reference = "D:\yizhishouji\进度记录_2026-11-13.md(2026-11-16 r14 复盘)", result = "v3 试机零输出+判据缺陷离线复现;panic 屏符号化链路多轮验证", command = "fastboot boot boot-houji-r14-dump.img;wsl python3 work/test_shlog4.py", revision = "1f8fe334d87f692466859cd2ad16d4714adc99abd7700b59235a8385adc296d4" },
+]
