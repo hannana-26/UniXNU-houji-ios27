@@ -88,6 +88,19 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # Storage stage: source UFS root on userdata, UFS diagnostics, boot log in the last 32 MiB of userdata.
   "native-source-storage=1", "native-ufs-root=1", "native-ufs-diagnostics=1", "sheng-log=1"]
 
+[payload.runtime]
+tool = "scripts/build-boot-runtime.py"
+target = "ios27"
+build = "24A446"
+# r49/r48 established the launchd SIGKILL (OS_REASON_CODESIGNING code 0x8 at exec) is kernel-side
+# code-signing validation: without a trust bundle no Apple platform binary validates, and the
+# diagnostic amfi_get_out_of_my_way=1 does not bypass the kernel check. The trust bundle comes from
+# these IPSW members, as on aston (board.toml [payload.runtime]); the Data seed itself is provided
+# by scripts/make-houji-data-seed.py through the workflow pre_build (--data-ramdisk).
+trust_components = ["StaticTrustCache", "Cryptex1,SystemTrustCache", "Cryptex1,AppTrustCache"]
+# The trust bundle holds the original caches only; the houji GPU addon is not configured yet.
+gpu_addon = false
+
 [payload.adt]
 # T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.
 chip_id = "0x8140"
