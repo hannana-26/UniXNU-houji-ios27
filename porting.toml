@@ -4,7 +4,7 @@ schema_version = 1
 name = "houji"
 soc = "SM8650"
 os_profile = "ios-27.0.1-24A446"
-summary = "Xiaomi 14 23127PN0CC (houji)。iOS 27.0.1 (24A446, arm64e) 移植,APFS+SHNGROOT 官方路线(与 sheng 同)。r46 的 APFS gate 错绑 panic 已修复并实机验证(c1d3026);r50 的信任包(f93a554)使 launchd exec 成功、dyld 映射 ~930 MB 后死于用户态 SIGSEGV(Initproc failed to start -- exit reason namespace 2 subcode 0xb),已闯入 Stage 7。UEFI sheng-log 读取器 v4.1 已实机读出 r15 残留(r16 轮);r15/r16 内核 ~45-58s 静默停止无 panic 屏(死因未知,QEMU A/B 待做);v4.2(先读后印+清屏+分页)已构建校验全过待试机(工程记录在仓库外 D:\yizhishouji\交接文档_最新.md 与 进度记录_2026-11-13.md)。"
+summary = "Xiaomi 14 23127PN0CC (houji)。iOS 27.0.1 (24A446, arm64e) 移植,APFS+SHNGROOT 官方路线(与 sheng 同)。r46 的 APFS gate 错绑 panic 已修复并实机验证(c1d3026);r50 的信任包(f93a554)使 launchd exec 成功、dyld 映射 ~930 MB 后死于用户态 SIGSEGV(Initproc failed to start -- exit reason namespace 2 subcode 0xb),已闯入 Stage 7。UEFI sheng-log 读取器 v4.1/v4.2 实机验证(清屏+分页);**r17 实证窗口头=168B sheng v5 流式环(CI 用 sheng kit 的 BootLog,本地 v4 副本未编入),r15/r16/r17 内核均 ~38-48s 静默停止无 panic 屏**;v4.3(按 msg_head 游标读真尾部)已构建待试机(工程记录在仓库外 D:\yizhishouji\交接文档_最新.md 与 进度记录_2026-11-13.md)。"
 
 [[area]]
 id = "configuration"
@@ -39,6 +39,8 @@ evidence = [
   { kind = "device", reference = "D:\yizhishouji\进度记录_2026-11-13.md(2026-11-16 r14 复盘)", result = "r14-dump(UEFI v3+payload-r50)完整走完:菜单→panic,读取器零输出(判据缺陷,离线已复现)", command = "fastboot boot boot-houji-r14-dump.img", revision = "1f8fe334d87f692466859cd2ad16d4714adc99abd7700b59235a8385adc296d4" },
   { kind = "device", reference = "D:\yizhishouji\build\bootimg-r1\r16.mp4 + 进度记录 2026-11-16 19:40 节", result = "r16(UEFI v4.1 f71e7ba1):候选探测 dev0..6 未命中+1 台回退扫描+dev6 命中 HEADER at -32 MiB(ver4/148B/win8192);msg 尾=噪声对;菜单后黑屏无 panic 屏,~48s 自动重启", command = "fastboot boot boot-houji-r16-shlog4b.img(用户已确认)", revision = "f71e7ba1e5535fb67d76ad4afcab3b49b967738ecca3c696d42e813a010c1f3c" },
   { kind = "host", reference = "build/bootimg-r1/boot-houji-r17-shlog4c2.img", result = "v4.2(先读后印+ClearScreen+分页)构建校验全过:verifyboot payload-r50 吻合、UEFI 段 c0d3e226、verify42 七串 FOUND;报废件 r17-shlog4c 361b2f84(*Msg 未初始化致 LTO 删 msg 分支)留档未试机", command = "build_uefi.py -d houjif -r DEBUG && mk17.py && verifyboot/uefiid/verify42", revision = "92408d14cbebf79a314df9a391703fe1d6ecfb11b206116698f7efeba3889cd0" },
+  { kind = "device", reference = "D:\yizhishouji\build\bootimg-r1\r17.mp4 + 进度记录 2026-11-17 08:25 节", result = "r17(v4.2 92408d14):清屏机制实证成功;头块读清=**168B sheng v5 头(NOTE 168!=148)+ state=2 writing/up=38s/written=28;槽仅 #slot 28 t=38s tag=(28B,普查组件在 houji 被 stub)**——payload 的 BootLog 来自 sheng kit(v5 流式环),本地 v4 副本不是编进内核的那份;v4.x 按 v4 线性取尾在环上取到任意旧区段", command = "fastboot boot boot-houji-r17-shlog4c2.img(用户已确认)", revision = "92408d14cbebf79a314df9a391703fe1d6ecfb11b206116698f7efeba3889cd0" },
+  { kind = "host", reference = "build/bootimg-r1/boot-houji-r18-shlog4d.img", result = "v4.3(v5 流式环感知:解析 msg_mode/msg_head,按游标读真尾部)构建校验全过:UEFI 7f1d9773、verify43 八串 FOUND;待试机读 r17 残留的真尾部", command = "build_uefi.py -d houjif -r DEBUG && mk18.py && verifyboot/uefiid/verify43", revision = "23a0e26b6c03e6e3953214e4661186c166f184b61fa32037ab9f17e20fc9e335" },
 ]
 
 [[area]]
