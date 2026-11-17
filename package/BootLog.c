@@ -29,6 +29,15 @@ extern int native_ufs_log_write(uint64_t, uint32_t, const void *) __attribute__(
 extern uint64_t native_ufs_export_blocks(void) __attribute__((weak_import));
 extern int native_ufs_export_write(uint64_t, uint32_t, const void *) __attribute__((weak_import));
 extern int native_ufs_log_sync(void) __attribute__((weak_import));
+// logfs/misc write windows (houji-logfs=1, NativeUfs.cpp 2026-11-17): the lonzzi log pipeline's targets.
+extern int native_ufs_logfs_open(const char **) __attribute__((weak_import));
+extern uint64_t native_ufs_logfs_blocks(void) __attribute__((weak_import));
+extern int native_ufs_logfs_read(uint64_t, uint32_t, void *) __attribute__((weak_import));
+extern int native_ufs_logfs_write(uint64_t, uint32_t, const void *) __attribute__((weak_import));
+extern int native_ufs_logfs_sync(void) __attribute__((weak_import));
+extern int native_ufs_misc_open(const char **) __attribute__((weak_import));
+extern int native_ufs_misc_read(uint64_t, uint32_t, void *) __attribute__((weak_import));
+extern int native_ufs_misc_write(uint64_t, uint32_t, const void *) __attribute__((weak_import));
 // The display driver's last refused swap (LegacyDisplayProbe.cpp): counts, reason, layer state/options, request size, surface slots and the surface.
 extern volatile uint32_t native_legacy_swap_accepted_count __attribute__((weak_import));
 extern volatile uint32_t native_legacy_swap_rejected_count __attribute__((weak_import));
@@ -1888,6 +1897,139 @@ static size_t log_groups_filter(char *text, size_t length) {
   return out;
 }
 
+// ---- HoujiLogFs: the logfs diagnostic record and the BCB recovery return (borrowed lonzzi pipeline, 2026-11-17) ----
+// Boot arguments: houji-logfs=1 writes the 64 KiB XNULOG.BIN record into the logfs partition every
+// houji-logfs-period rounds (default 5, ~10 s at LogPeriodMs=2000); houji-logfs-recovery=1 additionally
+// writes the no-wipe boot-recovery BCB into misc and resets through PSCI after the first successful
+// commit, so the phone returns to recovery and the record can be pulled over ADB without the UEFI
+// reader that cannot see userdata's LUN on this phone. The FAT12 geometry checks, the HJXNU001
+// record header and the header-last commit live in HoujiLogFsCore.h (the same file the host tools
+// compile, so kernel and host cannot drift); NativeUfs.cpp confines every write to the logfs and
+// misc windows, which only open under houji-logfs=1. The BCB record carries no wipe arguments.
+#include "HoujiLogFsCore.h"
+
+static uint8_t houji_logfs_meta[HOUJI_LOG_META_PAGES * HOUJI_LOG_PAGE] __attribute__((aligned(4096)));
+static uint8_t houji_logfs_image[HOUJI_LOG_FILE_BYTES] __attribute__((aligned(4096)));
+static uint8_t houji_logfs_bcb[3 * HOUJI_LOG_PAGE] __attribute__((aligned(4096)));
+static volatile unsigned houji_logfs_status = 0;  // 0 off, 1 open, 2 committed, 3 stopped (refused)
+static char houji_logfs_why[64];
+static unsigned houji_logfs_period = 5, houji_logfs_recovery = 0, houji_logfs_commits = 0;
+static uint64_t houji_logfs_boot_id = 0;
+static int houji_logfs_args_done = 0;
+
+static int houji_logfs_page_write(unsigned page, const uint8_t *src) {
+  return &native_ufs_logfs_write && native_ufs_logfs_write(HOUJI_LOG_FILE_FIRST_PAGE + page, 1, src);
+}
+static int houji_logfs_page_flush(void) {
+  return &native_ufs_logfs_sync && native_ufs_logfs_sync();
+}
+static int houji_logfs_page_read(unsigned page, uint8_t *dst) {
+  return &native_ufs_logfs_read && native_ufs_logfs_read(HOUJI_LOG_FILE_FIRST_PAGE + page, 1, dst);
+}
+
+static void houji_logfs_stop(const char *why) {
+  strlcpy(houji_logfs_why, why, sizeof houji_logfs_why);
+  houji_logfs_status = 3;
+  IOLog("HOUJI LOGFS: stopped: %s\n", why);
+}
+
+/* Open the logfs window, then prove the rebuilt FAT still holds our preallocated record. */
+static void houji_logfs_open(void) {
+  const char *why = "";
+  if (!&native_ufs_logfs_open || !&native_ufs_logfs_read || !&native_ufs_logfs_write ||
+      !&native_ufs_logfs_sync || !&native_ufs_logfs_blocks) {houji_logfs_stop("no logfs window"); return;}
+  if (!native_ufs_logfs_open(&why)) {houji_logfs_stop(why); return;}
+  if (native_ufs_logfs_blocks() < HOUJI_LOG_FILE_FIRST_PAGE + HOUJI_LOG_CLUSTER_COUNT) {
+    houji_logfs_stop("logfs smaller than the record"); return;
+  }
+  if (!native_ufs_logfs_read(0, HOUJI_LOG_META_PAGES, houji_logfs_meta)) {
+    houji_logfs_stop("logfs metadata read"); return;
+  }
+  if ((why = houji_logfs_fat_error(houji_logfs_meta, sizeof houji_logfs_meta))) {
+    houji_logfs_stop(why); return;
+  }
+  if (!native_ufs_logfs_read(HOUJI_LOG_FILE_FIRST_PAGE, HOUJI_LOG_CLUSTER_COUNT, houji_logfs_image)) {
+    houji_logfs_stop("log record read"); return;
+  }
+  if (!houji_logfs_initial_valid(houji_logfs_image, sizeof houji_logfs_image)) {
+    /* Not pristine: a previous run's record is fine to overwrite, anything else is not. */
+    if ((why = houji_logfs_header_check(houji_logfs_image, 0, 0))) {
+      houji_logfs_stop(why); return;
+    }
+  }
+  memset(houji_logfs_image, 0, sizeof houji_logfs_image);
+  houji_logfs_boot_id = log_ticks();
+  houji_logfs_status = 1;
+  IOLog("HOUJI LOGFS: logfs open, %llu blocks\n", (unsigned long long)native_ufs_logfs_blocks());
+}
+
+static void houji_logfs_reset_recovery(void) {
+  /* Only after a successful commit (houji_logfs_commits == 1): BCB RMW, readback, then PSCI reset. */
+  if (!&native_ufs_misc_open || !&native_ufs_misc_read || !&native_ufs_misc_write) {
+    IOLog("HOUJI LOGFS: recovery return unavailable (no misc window)\n");
+    return;
+  }
+  const char *why = "";
+  if (!native_ufs_misc_open(&why)) {IOLog("HOUJI LOGFS: misc refused: %s\n", why); return;}
+  if (!native_ufs_misc_read(0, 1, houji_logfs_bcb)) {IOLog("HOUJI LOGFS: BCB read failed\n"); return;}
+  memcpy(houji_logfs_bcb + HOUJI_LOG_PAGE, houji_logfs_bcb, HOUJI_LOG_PAGE);
+  if (!houji_logfs_recovery_record(houji_logfs_bcb + HOUJI_LOG_PAGE, HOUJI_LOG_PAGE)) {
+    IOLog("HOUJI LOGFS: BCB build failed\n"); return;
+  }
+  if (!native_ufs_misc_write(0, 1, houji_logfs_bcb + HOUJI_LOG_PAGE) ||
+      !(native_ufs_logfs_sync && native_ufs_logfs_sync())) {
+    IOLog("HOUJI LOGFS: BCB write/flush failed\n"); return;
+  }
+  if (!native_ufs_misc_read(0, 1, houji_logfs_bcb + 2 * HOUJI_LOG_PAGE) ||
+      memcmp(houji_logfs_bcb + 2 * HOUJI_LOG_PAGE, houji_logfs_bcb + HOUJI_LOG_PAGE, HOUJI_LOG_PAGE)) {
+    IOLog("HOUJI LOGFS: BCB readback failed\n"); return;
+  }
+  IOLog("HOUJI LOGFS: BCB verified (no wipe arguments); resetting to recovery\n");
+  __asm__ volatile("dsb sy" ::: "memory");
+  register uint64_t x0 __asm__("x0") = 0x84000009U;  /* PSCI SYSTEM_RESET */
+  __asm__ volatile("smc #0" : "+r"(x0) :: "x1","x2","x3","x4","x5","x6","x7","x8","x9",
+                   "x10","x11","x12","x13","x14","x15","x16","x17","memory");
+  panic("HOUJI LOGFS: PSCI reset returned %llx", (unsigned long long)x0);
+}
+
+/* One writer round: commit the record when the period says so, then the one-shot recovery return. */
+void houji_logfs_tick(unsigned now, const void *msg, unsigned msg_bytes, unsigned rounds,
+                      unsigned slots, unsigned state, const char *tag) {
+  if (!houji_logfs_args_done) {
+    uint32_t v = 0;
+    houji_logfs_args_done = 1;
+    if (!PE_parse_boot_argn("houji-logfs", &v, sizeof v) || v != 1) {houji_logfs_status = 3; strlcpy(houji_logfs_why, "off", sizeof houji_logfs_why); return;}
+    if (!PE_parse_boot_argn("houji-logfs-period", &v, sizeof v)) v = 5;
+    houji_logfs_period = v ? v : 5;
+    v = 0;
+    if (PE_parse_boot_argn("houji-logfs-recovery", &v, sizeof v)) houji_logfs_recovery = v == 1;
+  }
+  if (houji_logfs_status == 3) return;
+  if (houji_logfs_status == 0) houji_logfs_open();
+  if (houji_logfs_status != 1 && houji_logfs_status != 2) return;
+  if (houji_logfs_commits && rounds % houji_logfs_period) return;
+
+  /* Banner prefix, then the message-buffer tail (the writer's fresh copy, oldest-first linear). */
+  unsigned used = 0;
+  used = (unsigned)snprintf((char *)houji_logfs_image + HOUJI_LOG_PAGE, 256,
+    "#HJXLOG t=%us tag=%s rounds=%u slots=%u state=%u msg=%u\n", now, tag ? tag : "", rounds, slots, state, msg_bytes);
+  unsigned tail = msg_bytes < HOUJI_LOG_PAYLOAD_CAP - used ? msg_bytes : HOUJI_LOG_PAYLOAD_CAP - used;
+  memcpy(houji_logfs_image + HOUJI_LOG_PAGE + used,
+         (const uint8_t *)msg + (msg_bytes - tail), tail);
+  used += tail;
+  uint8_t run_id[16];
+  memset(run_id, 0, sizeof run_id);
+  for (unsigned i = 0; i < 8; ++i) run_id[i] = (uint8_t)(houji_logfs_boot_id >> (8 * i));
+  houji_logfs_header(houji_logfs_image, houji_logfs_image + HOUJI_LOG_PAGE, used, run_id);
+  const char *why = houji_logfs_commit(houji_logfs_image, sizeof houji_logfs_image,
+                                       houji_logfs_page_write, houji_logfs_page_flush, houji_logfs_page_read);
+  if (why) {houji_logfs_stop(why); return;}
+  ++houji_logfs_commits;
+  houji_logfs_status = 2;
+  IOLog("HOUJI LOGFS: commit %u bytes=%u t=%us\n", houji_logfs_commits, used, now);
+  if (houji_logfs_recovery && houji_logfs_commits == 1) houji_logfs_reset_recovery();
+}
+
 static void writer(void *arg, wait_result_t result) {
   (void)arg; (void)result;
   thread_set_thread_name(current_thread(), "boot_log");
@@ -1952,6 +2094,9 @@ static void writer(void *arg, wait_result_t result) {
     h.msg_bytes = copy_msgbuf(boot_log_buffer);
     if(diag==1)h.msg_bytes=bl_latency_messages((char *)boot_log_buffer,h.msg_bytes);
     ok &= native_ufs_log_write(LogMsgFirst, LogMsgBlocks, boot_log_buffer);
+    /* logfs record + optional recovery return; all writes gated by houji-logfs=1 (see HoujiLogFs section). */
+    houji_logfs_tick(now, boot_log_buffer, h.msg_bytes, boot_log_rounds + 1, h.slots_written,
+                     boot_log_state, &boot_progress_tag ? boot_progress_tag() : "");
     if (ok) ++h.slots_written;
     else ++h.write_errors;
     // The newest complete export is already on the medium; the header names it.

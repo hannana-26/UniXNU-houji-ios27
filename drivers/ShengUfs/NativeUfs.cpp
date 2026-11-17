@@ -1474,6 +1474,108 @@ extern "C" int native_ufs_part_read (uint32_t lun, uint64_t lba, uint32_t blocks
   return 1;
 }
 
+// ---- logfs/misc write windows (houji-logfs=1; the lonzzi log pipeline, adapted 2026-11-17) -------------------------
+// Whole-partition windows over the logfs (the 64 KiB XNULOG.BIN diagnostic record, FAT12; the FAT and the directory
+// are never written from here) and misc (the BCB page for the boot-recovery return) partitions, found by GPT name.
+// Writes go through the same gated primitives as the sheng-log window; both windows refuse unless the houji-logfs
+// boot argument is set, so boots without it never touch these partitions. The BCB page carries no wipe arguments
+// (BootLog.c houji_logfs section); nothing here erases, formats or touches the slot configuration.
+static unsigned logfsMode (void)
+{
+  static int cached = -1;
+  if (cached < 0) {
+    uint32_t value = 0;
+    if (!PE_parse_boot_argn ("houji-logfs", &value, sizeof (value)) || value > 1) value = 0;
+    cached = static_cast<int> (value);
+  }
+  return static_cast<unsigned> (cached);
+}
+
+extern "C" int native_ufs_logfs_open (const char **why)
+{
+  const char *reason = "";
+  uint32_t lun = 0;
+  uint64_t first = 0, blocks = 0;
+  int ok = 0;
+  if (!logfsMode ()) reason = "off";
+  else if (!gHost.ready) reason = "no host";
+  else if (!native_ufs_part_find ("logfs", &lun, &first, &blocks)) reason = "logfs not found";
+  else if (lun != 0) reason = "logfs not on LUN 0";
+  else if (blocks < 128 || blocks > 16384) reason = "logfs size";
+  else if (!hostLogfsOpen (first, blocks)) reason = "window refused";
+  else ok = 1;
+  if (why) *why = reason;
+  return ok;
+}
+
+// logfs size in 4096-byte blocks once open, else 0; reads, writes and the sync take block offsets inside it.
+extern "C" uint64_t native_ufs_logfs_blocks (void)
+{
+  return gLogfsBlocks;
+}
+
+extern "C" int native_ufs_logfs_read (uint64_t rel, uint32_t blocks, void *dst)
+{
+  if (!gLogfsOpen || !dst || !blocks || rel >= gLogfsBlocks || blocks > gLogfsBlocks - rel) return 0;
+  while (blocks) {
+    uint32_t chunk = blocks > kDataMax / 4096 ? static_cast<uint32_t> (kDataMax / 4096) : blocks;
+    if (hostRead4k (0, gLogfsFirst + rel, chunk, dst) != kIOReturnSuccess) return 0;
+    dst = static_cast<uint8_t *> (dst) + chunk * 4096ULL;
+    rel += chunk;
+    blocks -= chunk;
+  }
+  return 1;
+}
+
+extern "C" int native_ufs_logfs_write (uint64_t rel, uint32_t blocks, const void *src)
+{
+  if (!gLogfsOpen || !src || !blocks || rel >= gLogfsBlocks || blocks > gLogfsBlocks - rel) return 0;
+  while (blocks) {
+    uint32_t chunk = blocks > kDataMax / 4096 ? static_cast<uint32_t> (kDataMax / 4096) : blocks;
+    if (hostWrite4k (0, gLogfsFirst + rel, chunk, src) != kIOReturnSuccess) return 0;
+    src = static_cast<const uint8_t *> (src) + chunk * 4096ULL;
+    rel += chunk;
+    blocks -= chunk;
+  }
+  return 1;
+}
+
+extern "C" int native_ufs_logfs_sync (void)
+{
+  if (!gLogfsOpen) return 0;
+  return hostSyncCache () == kIOReturnSuccess;
+}
+
+extern "C" int native_ufs_misc_open (const char **why)
+{
+  const char *reason = "";
+  uint32_t lun = 0;
+  uint64_t first = 0, blocks = 0;
+  int ok = 0;
+  if (!logfsMode ()) reason = "off";
+  else if (!gHost.ready) reason = "no host";
+  else if (!native_ufs_part_find ("misc", &lun, &first, &blocks)) reason = "misc not found";
+  else if (lun != 0) reason = "misc not on LUN 0";
+  else if (blocks < 1 || blocks > 2048) reason = "misc size";
+  else if (!hostMiscOpen (first, blocks)) reason = "window refused";
+  else ok = 1;
+  if (why) *why = reason;
+  return ok;
+}
+
+extern "C" int native_ufs_misc_read (uint64_t rel, uint32_t blocks, void *dst)
+{
+  if (!gMiscWinOpen || !dst || !blocks || rel >= gMiscBlocks || blocks > gMiscBlocks - rel) return 0;
+  return hostRead4k (0, gMiscFirst + rel, blocks, dst) == kIOReturnSuccess;
+}
+
+// The BCB page: the only caller is BootLog.c houji_logfs, which writes the no-wipe boot-recovery record and reads it back.
+extern "C" int native_ufs_misc_write (uint64_t rel, uint32_t blocks, const void *src)
+{
+  if (!gMiscWinOpen || !src || !blocks || rel >= gMiscBlocks || blocks > gMiscBlocks - rel) return 0;
+  return hostWrite4k (0, gMiscFirst + rel, blocks, src) == kIOReturnSuccess;
+}
+
 // The fault registers of the endpoint's stream: global fault status and syndrome, then the context bank's FSR, FAR (low, high) and FSYNR0.
 extern "C" int native_ufs_extra_fault (uint32_t *out)
 {

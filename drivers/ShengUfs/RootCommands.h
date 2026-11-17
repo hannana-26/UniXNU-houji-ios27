@@ -256,12 +256,16 @@ static IOReturn hostRead4k (uint8_t lun, uint64_t lba, uint32_t blocks, void *ds
   return status;
 }
 
-// ---- Persistent store and log windows ------------------------------------------------------------------------------
-// The only place this driver writes. At most two windows of 4096-byte LBAs on LUN 0 (the Data store and the diagnostic log),
-// each opened once by its integration after it has proved that the window lies inside the userdata partition and clear of the
-// root image; every write is checked against them again here, so nothing outside them can be written even if a caller is wrong.
-static bool gStoreOpen = false, gLogOpen = false;
-static uint64_t gStoreFirst = 0, gStoreBlocks = 0, gLogFirst = 0, gLogBlocks = 0;
+// ---- Persistent store, log and logfs/misc windows ------------------------------------------------------------------
+// The only place this driver writes. At most four windows of 4096-byte LBAs on LUN 0 (the Data store, the diagnostic
+// log, and — new, houji-logfs=1 only — the whole logfs and misc partitions found by GPT name), each opened once by its
+// integration after it has proved that the window lies inside its partition and clear of the others; every write is
+// checked against them again here, so nothing outside them can be written even if a caller is wrong. logfs holds the
+// 64 KiB XNULOG.BIN record (FAT12, borrowed lonzzi pipeline) and misc the BCB page for the boot-recovery return; both
+// stay closed unless the houji-logfs boot argument is set, so boots without it never touch these partitions.
+static bool gStoreOpen = false, gLogOpen = false, gLogfsOpen = false, gMiscWinOpen = false;
+static uint64_t gStoreFirst = 0, gStoreBlocks = 0, gLogFirst = 0, gLogBlocks = 0,
+                gLogfsFirst = 0, gLogfsBlocks = 0, gMiscFirst = 0, gMiscBlocks = 0;
 
 static bool hostLogOpen (uint64_t first, uint64_t blocks)
 {
@@ -273,10 +277,36 @@ static bool hostLogOpen (uint64_t first, uint64_t blocks)
   return true;
 }
 
+static bool hostLogfsOpen (uint64_t first, uint64_t blocks)
+{
+  if (gLogfsOpen || !blocks || first > 0xffffffffULL || blocks > 0xffffffffULL - first) return false;
+  if ((gStoreOpen && first < gStoreFirst + gStoreBlocks && gStoreFirst < first + blocks) ||
+      (gLogOpen && first < gLogFirst + gLogBlocks && gLogFirst < first + blocks) ||
+      (gMiscWinOpen && first < gMiscFirst + gMiscBlocks && gMiscFirst < first + blocks)) return false;
+  gLogfsFirst = first;
+  gLogfsBlocks = blocks;
+  gLogfsOpen = true;
+  return true;
+}
+
+static bool hostMiscOpen (uint64_t first, uint64_t blocks)
+{
+  if (gMiscWinOpen || !blocks || first > 0xffffffffULL || blocks > 0xffffffffULL - first) return false;
+  if ((gStoreOpen && first < gStoreFirst + gStoreBlocks && gStoreFirst < first + blocks) ||
+      (gLogOpen && first < gLogFirst + gLogBlocks && gLogFirst < first + blocks) ||
+      (gLogfsOpen && first < gLogfsFirst + gLogfsBlocks && gLogfsFirst < first + blocks)) return false;
+  gMiscFirst = first;
+  gMiscBlocks = blocks;
+  gMiscWinOpen = true;
+  return true;
+}
+
 static bool hostInWindow (uint64_t lba, uint32_t blocks)
 {
   if (gStoreOpen && lba >= gStoreFirst && lba - gStoreFirst < gStoreBlocks && blocks <= gStoreBlocks - (lba - gStoreFirst)) return true;
-  return gLogOpen && lba >= gLogFirst && lba - gLogFirst < gLogBlocks && blocks <= gLogBlocks - (lba - gLogFirst);
+  if (gLogOpen && lba >= gLogFirst && lba - gLogFirst < gLogBlocks && blocks <= gLogBlocks - (lba - gLogFirst)) return true;
+  if (gLogfsOpen && lba >= gLogfsFirst && lba - gLogfsFirst < gLogfsBlocks && blocks <= gLogfsBlocks - (lba - gLogfsFirst)) return true;
+  return gMiscWinOpen && lba >= gMiscFirst && lba - gMiscFirst < gMiscBlocks && blocks <= gMiscBlocks - (lba - gMiscFirst);
 }
 
 static bool hostStoreOpen (uint64_t first, uint64_t blocks)
@@ -331,7 +361,7 @@ static IOReturn hostWrite4k (uint8_t lun, uint64_t lba, uint32_t blocks, const v
 // SYNCHRONIZE CACHE(10) for the whole LUN: everything written so far is on the medium when this returns.
 static IOReturn hostSyncCache (void)
 {
-  if (!gHost.ready || (!gStoreOpen && !gLogOpen)) return kIOReturnNotReady;
+  if (!gHost.ready || (!gStoreOpen && !gLogOpen && !gLogfsOpen && !gMiscWinOpen)) return kIOReturnNotReady;
   const bool held = hostLock ();
   uint8_t cdb[10] = { 0x35 };
   uint32_t scsi = 0;
