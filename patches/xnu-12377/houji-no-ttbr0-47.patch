@@ -1,0 +1,22 @@
+--- a/osfmk/arm64/proc_reg.h
++++ b/osfmk/arm64/proc_reg.h
+@@ -1108,7 +1108,7 @@
+  * authentication codes above bit 46 (libobjc strips isa with a 43-bit mask), so a native
+  * 4K kernel gives user pmaps four-level tables with a 47-bit range; TTBR1 keeps T1SZ_BOOT.
+  */
+-#if defined(BCM2837) && !defined(__ARM_16K_PG__) && defined(__arm64e__)
++#if 0 /* houji r21: keep T0SZ_BOOT; with the 47-bit TTBR0 the r20 kernel stalls after entry */
+ #define T0SZ_USER 17ULL
+ #else
+ #define T0SZ_USER T0SZ_BOOT
+--- a/pexpert/pexpert/arm64/BCM2837.h
++++ b/pexpert/pexpert/arm64/BCM2837.h
+@@ -13,7 +13,7 @@
+  * several address spaces once more than 255 exist and flushes it from the switching CPU's TLB at every switch between them;
+  * iPadOS runs several hundred processes. Every ARMv8.2+ core (sheng's A510/A715/X3) has 16-bit ASIDs; pmap_bootstrap() checks.
+  */
+-#define HAS_16BIT_ASID 1
++/* houji r21: 8-bit ASIDs as in r19 (TCR_EL1.AS left clear) */
+ 
+ #define BCM2837
+ #define ARM_ARCH_TIMER
