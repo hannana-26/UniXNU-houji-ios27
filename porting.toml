@@ -43,6 +43,7 @@ evidence = [
   { kind = "host", reference = "build/bootimg-r1/boot-houji-r18-shlog4d.img", result = "v4.3(v5 流式环感知:解析 msg_mode/msg_head,按游标读真尾部)构建校验全过:UEFI 7f1d9773、verify43 八串 FOUND;待试机读 r17 残留的真尾部", command = "build_uefi.py -d houjif -r DEBUG && mk18.py && verifyboot/uefiid/verify43", revision = "23a0e26b6c03e6e3953214e4661186c166f184b61fa32037ab9f17e20fc9e335" },
   { kind = "device", reference = "D:\yizhishouji\build\bootimg-r1\r18.mp4 + 进度记录 2026-11-17 08:40 节", result = "r18(v4.3):**8 台大设备候选+末尾 64MiB 扫描全部 no header,读取器快速退出**;dev 0 几何损坏(bs=4096, **974192 MiB≈951GiB 垃圾值**)+tz_armv8_smc_call 成片失败——静默复位后 UEFI 侧 UFS 几何劣化,窗口数据大概率仍完好", command = "fastboot boot boot-houji-r18-shlog4d.img(用户已确认)", revision = "23a0e26b6c03e6e3953214e4661186c166f184b61fa32037ab9f17e20fc9e335" },
   { kind = "host", reference = "build/bootimg-r1/boot-houji-r19-shlog4e.img", result = "v4.4(GPT 驱动定位:借 aston RootLayout.h 只读解析器,读 GPT→打印分区表→userdata/最大尾部分区直探窗口头,Media->LastBlock 只做兜底,>1TiB 几何跳过扫描)构建校验全过:UEFI 927b1296;待试机", command = "build_uefi.py -d houjif -r DEBUG && mk19.py && verifyboot/uefiid/verify43", revision = "6184d46747f421b2c7b55319d6c44573d80bb7f51f975a4face8354f70c38e0c" },
+  { kind = "device", reference = "D:\yizhishouji\进度记录_2026-11-13.md(2026-11-17 08:48 节)", result = "r19(v4.4 6184d467)已 fastboot boot(08:46,用户确认),录屏已拍但视频尚未分析——GPT 分区表打印是本轮核心诊断(窗口在不在介质上一目了然);视频路径由用户在新会话提供(微信 temp)", command = "fastboot boot boot-houji-r19-shlog4e.img(用户已确认)", revision = "6184d46747f421b2c7b55319d6c44573d80bb7f51f975a4face8354f70c38e0c" },
 ]
 
 [[area]]
