@@ -86,7 +86,10 @@ tools = true
 trust_cache_sha256 = []
 kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "cpus=1", "armcpu-diagnostics=1",
   # Storage stage: source UFS root on userdata, UFS diagnostics, boot log in the last 32 MiB of userdata.
-  "native-source-storage=1", "native-ufs-root=1", "native-ufs-diagnostics=1", "sheng-log=1"]
+  # logfs record (2026-11-17): writes gated on the prepared XNULOG.BIN allocation (HoujiLogFsCore.h);
+  # until logfs is backed up and rebuilt on the phone the open refuses and nothing is written there.
+  "native-source-storage=1", "native-ufs-root=1", "native-ufs-diagnostics=1", "sheng-log=1",
+  "houji-logfs=1", "houji-logfs-recovery=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"
