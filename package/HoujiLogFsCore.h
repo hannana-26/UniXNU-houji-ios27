@@ -22,6 +22,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The header compiles in TUs that use none of its functions (the generated weak-defaults file
+ * includes it through BootLog.c), so every static carries the unused attribute. */
+#if defined(__GNUC__) || defined(__clang__)
+#define HOUJI_LOG_FS_UNUSED __attribute__((unused))
+#else
+#define HOUJI_LOG_FS_UNUSED
+#endif
+
 #define HOUJI_LOG_PAGE        4096u
 #define HOUJI_LOG_META_PAGES  7u      /* boot sector + 2 FAT copies + 4 root-directory pages */
 #define HOUJI_LOG_FILE_BYTES  65536u  /* XNULOG.BIN size: 1 header page + 60 KiB payload */
@@ -34,7 +42,7 @@
 #define HOUJI_LOG_INITIAL_CRC   0xd7978eebU /* pristine XNULOG.BIN: 64 KiB of zeros (builder-written) */
 
 /* CRC32 (IEEE 802.3, reflected, poly 0xEDB88320), identical to zlib.crc32. */
-static uint32_t houji_crc32(const void *data, size_t bytes)
+HOUJI_LOG_FS_UNUSED static uint32_t houji_crc32(const void *data, size_t bytes)
 {
   static uint32_t table[256];
   static int built;
@@ -52,23 +60,23 @@ static uint32_t houji_crc32(const void *data, size_t bytes)
   return c ^ 0xFFFFFFFFU;
 }
 
-static unsigned houji_le16(const uint8_t *p) { return (unsigned)p[0] | ((unsigned)p[1] << 8); }
-static uint32_t houji_le32(const uint8_t *p)
+HOUJI_LOG_FS_UNUSED static unsigned houji_le16(const uint8_t *p) { return (unsigned)p[0] | ((unsigned)p[1] << 8); }
+HOUJI_LOG_FS_UNUSED static uint32_t houji_le32(const uint8_t *p)
 {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
-static void houji_store32(uint8_t *p, uint32_t v)
+HOUJI_LOG_FS_UNUSED static void houji_store32(uint8_t *p, uint32_t v)
 {
   for (unsigned i = 0; i < 4; ++i) p[i] = (uint8_t)(v >> (i * 8));
 }
-static unsigned houji_fat_next(const uint8_t *fat, unsigned c)
+HOUJI_LOG_FS_UNUSED static unsigned houji_fat_next(const uint8_t *fat, unsigned c)
 {
   const unsigned p = houji_le16(fat + c + c / 2);
   return (c & 1) ? p >> 4 : p & 0xFFFU;
 }
 
 /* The 16 preallocated clusters of XNULOG.BIN (lonzzi r21 allocation, bound to this partition). */
-static unsigned houji_log_cluster(unsigned i) { return HOUJI_LOG_CLUSTER_FIRST + i; }
+HOUJI_LOG_FS_UNUSED static unsigned houji_log_cluster(unsigned i) { return HOUJI_LOG_CLUSTER_FIRST + i; }
 
 /*
  * Validate the 7 metadata pages of logfs (boot sector, FAT copies, root directory) against the
@@ -76,7 +84,7 @@ static unsigned houji_log_cluster(unsigned i) { return HOUJI_LOG_CLUSTER_FIRST +
  * the chain consecutive, no other file overlapping it, the directory entry exactly once.
  * Returns nullptr when logfs holds our file, or the reason it does not.
  */
-static const char *houji_logfs_fat_error(const uint8_t *m, unsigned n)
+HOUJI_LOG_FS_UNUSED static const char *houji_logfs_fat_error(const uint8_t *m, unsigned n)
 {
   if (!m || n != HOUJI_LOG_META_PAGES * HOUJI_LOG_PAGE)
     return "logfs metadata size";
@@ -129,7 +137,7 @@ static const char *houji_logfs_fat_error(const uint8_t *m, unsigned n)
 }
 
 /* The pristine preallocated file: 64 KiB of zeros, before the first commit. */
-static int houji_logfs_initial_valid(const uint8_t *p, unsigned n)
+HOUJI_LOG_FS_UNUSED static int houji_logfs_initial_valid(const uint8_t *p, unsigned n)
 {
   return p && n == HOUJI_LOG_FILE_BYTES && houji_crc32(p, n) == HOUJI_LOG_INITIAL_CRC;
 }
@@ -138,7 +146,7 @@ static int houji_logfs_initial_valid(const uint8_t *p, unsigned n)
  * The record header: magic HJXNU001, format 1/1, the 16-byte run id of this boot, the payload
  * length and its CRC32, then the CRC32 of the first 4096 header bytes with this field still zero.
  */
-static void houji_logfs_header(uint8_t *h, const uint8_t *payload, unsigned bytes,
+HOUJI_LOG_FS_UNUSED static void houji_logfs_header(uint8_t *h, const uint8_t *payload, unsigned bytes,
                                const uint8_t run_id[16])
 {
   for (unsigned i = 0; i < HOUJI_LOG_PAGE; ++i) h[i] = 0;
@@ -153,7 +161,7 @@ static void houji_logfs_header(uint8_t *h, const uint8_t *payload, unsigned byte
 }
 
 /* Header fields of a committed record; returns nullptr when the image is one of ours. */
-static const char *houji_logfs_header_check(const uint8_t *image, unsigned *bytes, uint32_t *crc)
+HOUJI_LOG_FS_UNUSED static const char *houji_logfs_header_check(const uint8_t *image, unsigned *bytes, uint32_t *crc)
 {
   static const uint8_t magic[8] = {'H', 'J', 'X', 'N', 'U', '0', '0', '1'};
   if (!image) return "log image missing";
@@ -182,7 +190,7 @@ typedef int (*houji_logfs_write_fn)(unsigned page, const uint8_t *src);
 typedef int (*houji_logfs_flush_fn)(void);
 typedef int (*houji_logfs_read_fn)(unsigned page, uint8_t *dst);
 
-static const char *houji_logfs_commit(const uint8_t *image, unsigned bytes,
+HOUJI_LOG_FS_UNUSED static const char *houji_logfs_commit(const uint8_t *image, unsigned bytes,
                                       houji_logfs_write_fn write, houji_logfs_flush_fn flush,
                                       houji_logfs_read_fn read)
 {
@@ -207,7 +215,7 @@ static const char *houji_logfs_commit(const uint8_t *image, unsigned bytes,
  * stage fields, write "boot-recovery" and "recovery", preserve reserved bytes and the adjacent
  * A/B control data (lonzzi HoujiRecoveryRecord.h).
  */
-static int houji_logfs_recovery_record(uint8_t *page, unsigned n)
+HOUJI_LOG_FS_UNUSED static int houji_logfs_recovery_record(uint8_t *page, unsigned n)
 {
   if (!page || n != HOUJI_LOG_PAGE) return 0;
   for (unsigned i = 0; i < 864; ++i) page[i] = 0;
