@@ -1,0 +1,34 @@
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -2011,6 +2011,31 @@
+ 		} else {
+ 			prefix_str = "initproc failed to start";
+ 		}
++#if __arm64__
++		/*
++		 * houji (UniXNU): the panic text is the only output read on this board, so name launchd's last user
++		 * exception there: PC, LR, FAR, ESR, the instruction words at PC-4..PC+4 (with the PC's page offset they
++		 * locate it in the dyld shared cache without the slide) and two frame returns. exception.c records them.
++		 */
++		{
++			struct sheng_exc_record {char name[20]; uint32_t pid, type, esr, frames; uint64_t pc, lr, far, ret[12];};
++			extern struct sheng_exc_record sheng_exc_ring[4];
++			extern volatile uint32_t sheng_exc_count;
++			static char houji_fault_buf[320];
++			uint32_t houji_n = sheng_exc_count;
++			if (houji_n != 0) {
++				struct sheng_exc_record *r = &sheng_exc_ring[(houji_n - 1) & 3];
++				uint32_t w[3] = {0, 0, 0};
++				if (current_proc() == p) {
++					(void)copyin((user_addr_t)(r->pc - 4), w, sizeof(w));
++				}
++				snprintf(houji_fault_buf, sizeof(houji_fault_buf),
++				    "%s [n%u t%u pc 0x%llx lr 0x%llx far 0x%llx esr 0x%x w %08x %08x %08x r 0x%llx 0x%llx]",
++				    prefix_str, houji_n, r->type, r->pc, r->lr, r->far, r->esr, w[0], w[1], w[2], r->ret[0], r->ret[1]);
++				prefix_str = houji_fault_buf;
++			}
++		}
++#endif /* __arm64__ */
+ 	} else {
+ 		/* For processes that aren't launchd, just use the process name and pid */
+ 		snprintf(prefix_str_buf, sizeof(prefix_str_buf), "%s[%d] exited", p->p_name, proc_getpid(p));

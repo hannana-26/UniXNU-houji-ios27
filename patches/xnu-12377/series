@@ -1,3 +1,8 @@
 source-storage-runtime.patch
 aston-reboot-readonly-unmount.patch
 aston-iouserserver-compact-dispatch.patch
+# r20: aston's iOS 27 userland bring-up (47-bit TTBR0 for arm64e PAC, 16 KiB dyld fixup pages on 4 KiB, Darwin 26 posix_spawnattr, lockdown_mode name, launchd exception record). zzyd first: the bring-up's kern_exec.c context needs it.
+zzyd-sheng-audio-addon-mount.patch
+zzzz-sheng-ipados27-bringup.patch
+# r20: launchd's last user exception (pc/lr/far/esr/insn) in the initproc panic text.
+houji-initproc-fault-panic.patch
