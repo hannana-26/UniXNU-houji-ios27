@@ -4,6 +4,11 @@ aston-iouserserver-compact-dispatch.patch
 # r20: aston's iOS 27 userland bring-up (47-bit TTBR0 for arm64e PAC, 16 KiB dyld fixup pages on 4 KiB, Darwin 26 posix_spawnattr, lockdown_mode name, launchd exception record). zzyd first: the bring-up's kern_exec.c context needs it.
 zzyd-sheng-audio-addon-mount.patch
 zzzz-sheng-ipados27-bringup.patch
+# r55: the official fix for 16 KiB fixup-page assembly on 4 KiB kernels: the dyld pager held
+# its source page busy while peeking the other parts, self-deadlocking uninterruptibly in
+# vm_object_upl_request (the r51 freeze at sheng-sign) and corrupting fixup output on the
+# boots that survived the wait (r53-retry garbage class pointer). Official order: after zzzz.
+vmwait-dyld-pager-source-release.patch
 # r21: r20 stalled after the kernel entry (blue bar, no panic screen, two runs); undo the bring-up's early TCR changes (47-bit TTBR0, 16-bit ASIDs), keep its exec/dyld/exception parts.
 houji-no-ttbr0-47.patch
 # r20: launchd's last user exception (pc/lr/far/esr/insn) in the initproc panic text.

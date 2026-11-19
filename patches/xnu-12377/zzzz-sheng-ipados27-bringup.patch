@@ -1620,8 +1620,8 @@ index d3cd6e8..17a842c 100644
  			*signedAddr = (uintptr_t)pmap_sign_user_ptr((void *)unsignedAddr, key, extendedDiscriminator, pager->dyld_a_key);
  		}
 +		static int sheng_sign_logged = 0;
-+		if (!sheng_sign_logged) {
-+			sheng_sign_logged = 1;
++		if (sheng_sign_logged < 4) {
++			sheng_sign_logged++;
 +			printf("sheng-sign: unsignedAddr=0x%llx key=%d addrDiv=%d diversity=0x%x disc=0x%llx a_key=0x%llx result=0x%llx\n",
 +			    (unsigned long long)unsignedAddr, key, addrDiv, diversity,
 +			    (unsigned long long)extendedDiscriminator, (unsigned long long)pager->dyld_a_key,
@@ -1645,7 +1645,7 @@ index d3cd6e8..17a842c 100644
  		delta = (value >> 51) & 0x7FF;
  		delta *= step_multiplier;
 +		static int sheng_fixup64_logged = 0;
-+		if (sheng_fixup64_logged < 12) {
++		if (sheng_fixup64_logged < 64) {
 +			printf("sheng-chain[%d]: off=0x%llx value=0x%llx\n",
 +			    sheng_fixup64_logged, (unsigned long long)((uintptr_t)chain - contents), (unsigned long long)value);
 +			sheng_fixup64_logged++;
@@ -1677,8 +1677,8 @@ index d3cd6e8..17a842c 100644
  		delta = (value >> 52) & 0x7FF;
  		delta *= step_multiplier;
 +		static int sheng_fixup_logged = 0;
-+		if (!sheng_fixup_logged) {
-+			sheng_fixup_logged = 1;
++		if (sheng_fixup_logged < 16) {
++			sheng_fixup_logged++;
 +			printf("sheng-fixup: value=0x%llx image_address=0x%llx slide=0x%llx startOff=0x%x pageIndex=%u userVA=0x%llx\n",
 +			    (unsigned long long)value, (unsigned long long)hdr->mwli_image_address,
 +			    (unsigned long long)hdr->mwli_slide, firstStartOffset, pageIndex, (unsigned long long)userVA);
@@ -1702,8 +1702,8 @@ index d3cd6e8..17a842c 100644
 -			pageIndex = (uint32_t)(userVA - segStartAddress) / PAGE_SIZE;
 +			pageIndex = (uint32_t)(userVA - segStartAddress) / seg->page_size;
 +			static int sheng_mwl_logged = 0;
-+			if (!sheng_mwl_logged) {
-+				sheng_mwl_logged = 1;
++			if (sheng_mwl_logged < 8) {
++				sheng_mwl_logged++;
 +				printf("sheng-mwl: fmt=0x%x hdr_page_size=0x%x seg_page_size=0x%x seg_count=%u pageIndex=%u userVA=0x%llx segStart=0x%llx\n",
 +				    hdr->mwli_pointer_format, hdr->mwli_page_size, seg->page_size, seg->page_count, pageIndex,
 +				    (unsigned long long)userVA, (unsigned long long)segStartAddress);
