@@ -10,6 +10,12 @@ zzzz-sheng-ipados27-bringup.patch
 # boots that survived the wait (r53-retry garbage class pointer). Official order: after zzzz.
 vmwait-dyld-pager-source-release.patch
 # r21: r20 stalled after the kernel entry (blue bar, no panic screen, two runs); undo the bring-up's early TCR changes (47-bit TTBR0, 16-bit ASIDs), keep its exec/dyld/exception parts.
-houji-no-ttbr0-47.patch
+# r58 (2026-11-20): houji-no-ttbr0-47.patch dropped. Without it T0SZ_USER=T0SZ_BOOT=26 (38-bit user VA,
+# BCM2837 4K + __ARM64_PMAP_SUBPAGE_L1__), so user data PACs start at bit 38, inside libobjc's isa mask
+# 0x7fffffffff8 (bits 3..42, 230 uses in the 24A446 cache). Both crash pointers (r53 far 0x481e719ed30,
+# r57 0x3c1e857ad30) are the correct slid cache class 0x1e6ebed30 plus junk only in bits 38..42 = PAC
+# residue the mask keeps. The r21 premise was refuted by r21 itself (no blue bar without the change).
+# Keep zzzz's 47-bit TTBR0 and 16-bit ASIDs as sheng/aston (SpringBoard) do.
+# houji-no-ttbr0-47.patch
 # r20: launchd's last user exception (pc/lr/far/esr/insn) in the initproc panic text.
 houji-initproc-fault-panic.patch
