@@ -54,10 +54,10 @@ paths = ["board.toml", "dts/houji.dts", "configs/**"]
 inputs = ["SM8650 CPU 拓扑与 PSCI(架构 timer,PSCI method SMC,与 shennong 同 SoC)", "AppleARMPlatform 的 AppleARMCPU personality 按 IONameMatch=cpu 前缀认领"]
 configuration = ["payload args:cpus=1、armcpu-diagnostics=1;[payload.adt] kernel-ctrr-to-be-enabled=0(SM8650 无 CTRR,vermeer/aston/sheng 同)"]
 procedure = ["fastboot boot 后经 panic 屏/日志观察 AppleARMCPU 认领与 bsd_init 推进"]
-findings = ["单核下 XNU 从内核入口一路走到用户态 exec(r50):CPU 认领、timer、IPI 无阻塞", "副核未启用(cpus=1)"]
+findings = ["单核下 XNU 从内核入口一路走到用户态 exec(r50):CPU 认领、timer、IPI 无阻塞", "副核未启用(cpus=1)", "2026-11-20 P1 根因(推测,强证据,待 r58 实机):houji-no-ttbr0-47.patch(r21)让 T0SZ_USER=T0SZ_BOOT=26(BCM2837 4K+__ARM64_PMAP_SUBPAGE_L1__ → 38 位用户 VA),用户数据指针 PAC 从 bit38 起;libobjc ISA_MASK=0x7fffffffff8(保留 bit3..42,24A446 缓存 .01 中 230 处 and 立即数,work/chk_isa_mask2.py)。两次崩溃 far 异或(正确滑动类指针 0x1e6ebed30+slide)= r53 0x48000000000(bit39,42)/ r57 0x3c000000000(bit38-41),杂位只在 bit38..42=PAC 残留被 isa 掩码保留(work/chk_isa_mask.py)。zzzz 注释原话:arm64e 用户态要 PAC 在 bit46 以上(libobjc 43 位掩码),故 4K 内核给用户 47 位 TTBR0。r21 的前提(47 位 TTBR0 致入口卡死)已被 r21 自身推翻(去掉后照样无蓝条)。r58=去掉该补丁(series 0750466),同 sheng/aston(进 SpringBoard)"]
 completion = ["启用的 CPU 到达入口检查点,timer/IPI 工作"]
 limits = ["只验证单核;副核上线与频率管理未开始"]
-next_action = ["launchd SIGSEGV 定位后再评估副核"]
+next_action = ["r58(CI 44648976670,无 houji-no-ttbr0-47,ADT 生成器 fork bb09025 发 AAPL,phandle)打包 work/mk58.sh 后上机:launchd 过 realizeClassWithoutSwift=P1 关闭;若入口无蓝条/卡死,对照好坏模式统计再判,不立刻归咎 47 位 TTBR0", "launchd 稳定后再评估副核"]
 evidence = [
   { kind = "device", reference = "https://github.com/hannana-26/UniXNU-houji-ios27/blob/storage/docs/handoff-2026-11-19.md §3", result = "r50 launchd exec 成功(用户态),说明 cpu0/timer 链路可用", command = "fastboot boot boot-houji-r50-probe.img", revision = "f93a55480962cb72604c877b52fcc15ef78d65fe" },
 ]
