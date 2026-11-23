@@ -93,7 +93,12 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # P10 plan A (2026-11-23): the persistent Data store window (NativeUfs.cpp:1273; =2 opens writes,
   # =1 is a read-only window proof that an isBig disk must not use). data-reset=1 travels only on the
   # one-time provisioning boot (mk60b), never in board.toml.
-  "sheng-data-persist=2"]
+  "sheng-data-persist=2",
+  # r61 (2026-11-23, as sheng :61/:185/:243 and aston :137): disable watchdogd (no hardware watchdog
+  # backend on this board) and the bring-up lite list (identityservicesd/locationd/CommCenter cycles,
+  # obliteration, fairplayd, coreduetd, ...); BootWatchdogPolicy.c writes them into launchd's
+  # disabled.plist on the writable Data volume. Also the top candidate behind boot1's restart request.
+  "sheng-disable-watchdogd=1", "sheng-lite=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

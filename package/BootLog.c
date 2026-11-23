@@ -2169,11 +2169,53 @@ void boot_log_panic_flush(void) {
   native_ufs_log_sync();
 }
 
+// ---- Halt/restart through PSCI (2026-11-23, borrowed from aston package/AstonHaltRestart.c, MIT) ----
+// No driver of this fileset sets PE_halt_restart, so IOPlatformExpert::haltRestart returned -1 and
+// halt_all_cpus spun until PEHaltRestart's 30 s timer panicked "Halt/Restart Timed Out" @IOPlatformExpert.cpp:884
+// (r60 boot1 2026-11-23; the same panic as aston boots 6-7 and sheng's macOS shutdown capture). This hook issues
+// PSCI SYSTEM_RESET or SYSTEM_OFF through the SMC conduit, the same call the logfs recovery reset below uses.
+// A panic's own restart stays on the panic screen: kPanicBegin returns -1, so the panic path keeps spinning
+// exactly as without the hook.
+extern int (*PE_halt_restart)(unsigned int type);
+enum { houji_kHaltCPU = 0, houji_kRestartCPU = 1, houji_kPanicRestartCPU = 4, houji_kPanicBegin = 7,
+       houji_kPanicEnd = 8, houji_kPanicRestartCPUNoCallouts = 9, houji_kPanicDiagnosticsDone = 10,
+       houji_kPanicDiagnosticsInProgress = 11 };
+enum { houji_psci_system_off = 0x84000008u, houji_psci_system_reset = 0x84000009u };
+
+static volatile int houji_halting;
+
+static int houji_halt_restart(unsigned int type) {
+  switch (type) {
+  case houji_kPanicBegin: case houji_kPanicEnd: case houji_kPanicRestartCPU: case houji_kPanicRestartCPUNoCallouts:
+  case houji_kPanicDiagnosticsDone: case houji_kPanicDiagnosticsInProgress:
+    houji_halting = 1;
+    return -1;
+  case houji_kRestartCPU: case houji_kHaltCPU:
+    if (houji_halting) return -1;
+    __asm__ volatile("dsb sy" ::: "memory");
+    {
+      register uint64_t x0 __asm__("x0") = (type == houji_kHaltCPU) ? houji_psci_system_off : houji_psci_system_reset;
+      __asm__ volatile("smc #0" : "+r"(x0) :: "x1","x2","x3","x4","x5","x6","x7","x8","x9","x10","x11","x12","x13","x14","x15","x16","x17","memory");
+    }
+    return -1;   // PSCI returned: the caller spins and the timer panics, as without this hook
+  default:
+    return -1;
+  }
+}
+
+// houji-halt-restart=0 leaves PE_halt_restart unset. Another driver's hook is kept.
+void houji_halt_restart_install(void) {
+  uint32_t on = 1;
+  PE_parse_boot_argn("houji-halt-restart", &on, sizeof on);
+  if (on && !PE_halt_restart) PE_halt_restart = houji_halt_restart;
+}
+
 // Called by the board page's monitor once a second; starts the writer the first time when sheng-log=1.
 void boot_log_tick(unsigned now) {
   (void)now;
   if (boot_log_started) return;
   boot_log_started = 1;
+  houji_halt_restart_install();  // restart and power off through PSCI (the section above), independent of sheng-log
   // An unattended run must come back however it ends: on the desktop past its deadline (int-229 first suspected) or in a panic seconds
   // after the start, before UFS and this log exist (int-229: a duplicate class at PE_lockdown_iokit). So the first tick, independent of
   // sheng-log, marks the cell (any restart is fastboot) and arms the hypervisor's watchdog, which bites a minute after the pings stop:
