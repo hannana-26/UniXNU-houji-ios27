@@ -89,7 +89,11 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # logfs record (2026-11-17): writes gated on the prepared XNULOG.BIN allocation (HoujiLogFsCore.h);
   # until logfs is backed up and rebuilt on the phone the open refuses and nothing is written there.
   "native-source-storage=1", "native-ufs-root=1", "native-ufs-diagnostics=1", "sheng-log=1",
-  "houji-logfs=1", "houji-logfs-recovery=1"]
+  "houji-logfs=1", "houji-logfs-recovery=1",
+  # P10 plan A (2026-11-23): the persistent Data store window (NativeUfs.cpp:1273; =2 opens writes,
+  # =1 is a read-only window proof that an isBig disk must not use). data-reset=1 travels only on the
+  # one-time provisioning boot (mk60b), never in board.toml.
+  "sheng-data-persist=2"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"
@@ -114,7 +118,15 @@ owned_memory_size = "0x80000000"
 # needed the 8 GiB seed expanded inside the 2 GiB darwinboot window and failed
 # with EFI_BAD_BUFFER_SIZE; the kernel's RamBlock unpacks packed seeds natively.
 packed_data_ramdisk = true
-persistent_data = false
+# P10 fix (2026-11-23, plan A as sheng/aston): the 8 GiB packed seed alone is
+# read-only by design (RamBlock isBig serves writes only through the persistent
+# store, NativeRamBlock.cpp:74-75). persistent_data drops the ephemeral-storage
+# ADT property; the kernel argument sheng-data-persist=2 (NativeUfs.cpp:1273,
+# the same name aston passes) opens the store window at the end of userdata
+# (persist::windowBlocks = 1+bitmap+pages ~= 8.0005 GiB, default 1 GiB
+# sheng-log-reserve keeps clear of the log). First store open needs data-reset=1
+# once (mk60b provisioning image); later boots resume without it.
+persistent_data = true
 
 [bootimg.image]
 base = 0x80000000
