@@ -11,7 +11,7 @@ kit = "sheng"
 os_profile = "ios-27.0.1-24A446"
 
 [components]
-include = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock"]
+include = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock", "GopFramebuffer"]
 
 # The iOS root image (SHNGROOT manifest, OS and SystemOS windows, OS.vroot/SystemOS.vroot tables) is flashed over the whole
 # Android "userdata" partition (LUN 0, 4096-byte sectors). ShengUfs matches that GPT name (drivers/ShengUfs/RootLayout.h) and
@@ -37,6 +37,11 @@ archives = [
   "component:ShengUfs",
   "build-sheng-source-storage.py --policy-dir scripts/policies/ios-27.0.1-24A446",
   "component:RamBlock",
+  # r63 display bring-up (as aston's iOS 27 chain): the board builder binds the owned GOP backend to the
+  # original IOMobileFramebufferLegacy of the iPhone17,2 (D94AP) 24A446 fileset (fixture
+  # legacy-display-24A446-d94ap.json, kernelcache fa07057b... = our XnuPrelink fixture) and links the
+  # component with the trimmed board probe (package/LegacyDisplayProbe.cpp, display lifecycle only).
+  "build-gop-legacy-display-27.py",
   "build-fileset-release-reference.py --tree . --lto",
 ]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8550.config", "os:configs/ios.config"]
@@ -55,6 +60,8 @@ unixnu = "../UniXNU-official"
 [adt.product]
 [adt.product.string]
 model = "xiaomi,houji"
+# r63 (as sheng/aston): the display pipeline reports sRGB; SpringBoard's gamut match needs it.
+artwork-display-gamut = "sRGB"
 [adt.product.u32]
 thin-bezel = 1
 [adt.defaults]
@@ -89,7 +96,7 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # logfs record (2026-11-17): writes gated on the prepared XNULOG.BIN allocation (HoujiLogFsCore.h);
   # until logfs is backed up and rebuilt on the phone the open refuses and nothing is written there.
   "native-source-storage=1", "native-ufs-root=1", "native-ufs-diagnostics=1", "sheng-log=1",
-  "houji-logfs=1", "houji-logfs-recovery=1",
+  "houji-logfs=1", "houji-logfs-period=1",
   # P10 plan A (2026-11-23): the persistent Data store window (NativeUfs.cpp:1273; =2 opens writes,
   # =1 is a read-only window proof that an isBig disk must not use). data-reset=1 travels only on the
   # one-time provisioning boot (mk60b), never in board.toml.
@@ -98,7 +105,19 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # backend on this board) and the bring-up lite list (identityservicesd/locationd/CommCenter cycles,
   # obliteration, fairplayd, coreduetd, ...); BootWatchdogPolicy.c writes them into launchd's
   # disabled.plist on the writable Data volume. Also the top candidate behind boot1's restart request.
-  "sheng-disable-watchdogd=1", "sheng-lite=1"]
+  "sheng-disable-watchdogd=1", "sheng-lite=1",
+  # r63 display bring-up (2026-11-24, the aston iOS 27 display argument group, minus its GPU members:
+  # no Adreno here, so the CPU copy path presents the frames). offline-legacy-gop=1 lets
+  # NativeLegacyDisplay::startHardware accept the firmware GOP framebuffer (PE_current_console, fed by
+  # DarwinBoot's BootVideo from the real GOP handoff; houji Display_Reserved = 0xFC400000+0x2B00000,
+  # already in dts/houji.dts splash_region). unit-scale=3 = iPhone 3x points on this 460ppi panel,
+  # as aston. vsync=60: the GOP scanout has no vblank interrupt, a work-loop timer feeds the
+  # compositor's vsync (sheng/aston without dpu-scanout). No backlight argument this round: the
+  # firmware leaves the panel lit (UEFI menu/panic screen are visible); kernel panel control comes
+  # with the touch/backlight round.
+  "offline-mobile-graphics-load=1", "offline-mobile-graphics-client=1", "offline-legacy-register=1",
+  "offline-legacy-gop=1", "offline-legacy-unit-scale=3", "offline-legacy-pm=1", "offline-legacy-validate=1",
+  "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "vsync=60"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

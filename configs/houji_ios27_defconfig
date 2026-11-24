@@ -21,4 +21,7 @@ CONFIG_XNU_OWNER_UNION_SYSTEMOS=y
 CONFIG_XNU_OWNER_DATA_VOLUME_UUID="2A5E9027-D9E1-40F9-983C-41BD3F1994F5"
 # CONFIG_XNU_NATIVE_UFS is not set
 # CONFIG_XNU_NATIVE_ADRENO is not set
-# CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
+# r63 display bring-up (2026-11-24, as sheng/aston): the GOP legacy display provider links
+# build/native-legacy-display/libNativeLegacyDisplay.late.a (build-gop-legacy-display-27.py);
+# bsd_init/IOUserClient call native_legacy_display_probe() under this config (offline-component-load-probes.patch).
+CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y
