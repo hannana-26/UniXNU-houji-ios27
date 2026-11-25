@@ -418,11 +418,17 @@ def load_helper(name, path):
 
 
 headers_helper = load_helper('source_storage_headers', ROOT / 'scripts/prepare-storage-headers.py')
-import tomllib
-hid_profile = tomllib.loads((ROOT / 'profiles/os/ios-27.0.1-24A446/profile.toml').read_text())
-hid_pins = {entry['name']: entry for entry in hid_profile.get('source', [])}
-hid_feed = ROOT / 'refer/IOHIDFamily'
-headers_helper.pinned_source(hid_feed, hid_pins['IOHIDFamily']['commit'])
+# ROOT is the assembled build tree: it has no profiles/ and no refer/ (IOHIDFamily is not in the official REFERENCES), so the
+# pin is written here and the builder clones it itself. Source of the pin: UniXNU-official
+# profiles/os/ios-27.0.1-24A446/profile.toml [[source]] name = "IOHIDFamily" (git/ref/commit below, copied verbatim).
+HID_GIT = 'https://github.com/apple-oss-distributions/IOHIDFamily.git'
+HID_REF = 'IOHIDFamily-2238.120.5'
+HID_COMMIT = 'e31e90a24c27ad6cbe981650d12a1a4124065b03'
+hid_feed = ROOT / 'build/refer-hid/IOHIDFamily'
+if not (hid_feed / '.git').exists():
+    hid_feed.parent.mkdir(parents=True, exist_ok=True)
+    run(['git', 'clone', '--depth', '1', '--branch', HID_REF, HID_GIT, hid_feed])
+headers_helper.pinned_source(hid_feed, HID_COMMIT)
 hid_include = OUT / 'hid-headers/include'
 (hid_include / 'IOKit/hid').mkdir(parents=True, exist_ok=True)
 (hid_include / 'IOKit/hidsystem').mkdir(parents=True, exist_ok=True)
