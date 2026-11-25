@@ -500,9 +500,16 @@ void native_legacy_display_late_probe(void);
 // r67 (2026-11-25): the one board probe that must stay is the AppleKeyStore state service (package/KeyStoreProbe.cpp,
 // aston's file unchanged): without it MKBEventsRegister fails and SpringBoard never takes the display. It is gated by
 // offline-key-events=1 and sheng-aks=1 and runs first, as aston's late probe does.
+// r68 (2026-11-25): the HID input path joins it - native_hid_input_probe starts the owned virtual HID device on
+// offline-hid-input=1 + offline-hid-home=1 (offline-hid-auto-home=<sec> presses Home through the real stack once the
+// display presents frames), sheng_buttons_probe feeds real PMIC power/volume keys into its Consumer sink (buttons=1).
 extern void native_keystore_probe(void);
+extern "C" void native_hid_input_probe(void);
+extern "C" void sheng_buttons_probe(void);
 void native_legacy_display_late_probe(void) {
     native_keystore_probe();
+    native_hid_input_probe();
+    sheng_buttons_probe();
     IOService *display=pendingLegacyDisplay;if(!display)return;pendingLegacyDisplay=nullptr;
     native_legacy_surface_status=OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
     OSDictionary *matching=IOService::nameMatching("IOCoreSurfaceRoot");

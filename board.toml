@@ -129,7 +129,15 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # with offline-key-events=1 AND sheng-aks=1 (KeyStoreProbe.cpp). Without it MKBEventsRegister fails, liveactivitiesd traps at every
   # start, chronod and SpringBoard wait on it (official venus.md:405). boot-ui-trace=1 + focus slots put the stacks of the three
   # processes on that chain into the logfs record (sheng BootLog.c/BootProcessProbe.c), so one short read-back explains a failure.
-  "offline-key-events=1", "sheng-aks=1", "boot-ui-trace=1", "boot-ui-focus=liveactivitiesd", "boot-ui-focus3=chronod"]
+  "offline-key-events=1", "sheng-aks=1", "boot-ui-trace=1", "boot-ui-focus=liveactivitiesd", "boot-ui-focus3=chronod",
+  # r68 (2026-11-25, input round; aston/sheng consumer-side args): the owned virtual HID device (NativeHidInput) starts with
+  # offline-hid-input=1 AND offline-hid-home=1 (HidInputProbe.cpp). buttons=1 starts ButtonProbe (sheng's PMIC keys: power,
+  # volume down = PON resin IRQ 6, volume up = pm8550@1 GPIO 6 = peripheral 0x8d00 - all three verified against dts/houji.dts:
+  # qcom,spmi@c42d000 windows, qcom,pdc@b220000, resin linux,code 0x72, vol_up gpios <phandle 0x61c(=pinctrl@8800, pm8550-gpio
+  # reg 0x8800) 6 1>). offline-hid-auto-home=20 = one unattended Home press 20 s after the second presented frame (aston
+  # HidInputProbe's documented mechanism for hardware without an external input harness) - it dismisses the lock screen so the
+  # desktop renders while the touch driver round is still pending.
+  "offline-hid-input=1", "offline-hid-home=1", "offline-hid-auto-home=20", "buttons=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

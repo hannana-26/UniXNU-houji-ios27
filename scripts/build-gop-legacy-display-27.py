@@ -390,15 +390,141 @@ gop = ROOT / 'build/native-gop-presenter'
 gop_late = gop / 'NativeGOPPresenter.late.o'
 run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func', '--globalize-symbol=__GLOBAL__sub_I_NativeGOPPresenter.cpp',
      gop / 'NativeGOPPresenter.o', gop_late])
+
+# r68 (2026-11-25): the HID input path, restored from the aston iOS 27 builder (its ShengHidInput group) without the touch
+# transport (houji has no touch driver yet). The owned virtual HID device is NativeHidInput (an unchanged copy of UniXNU
+# ShengHidInput 71a40e7: keyboard + Consumer reports, report 2 bit 0 = Home), fed by the PMIC button driver ButtonProbe
+# (sheng's file unchanged: houji's button hardware matches its constants - SPMI windows and PDC 0xb220000 from dts
+# qcom,spmi@c42d000 and qcom,pdc@b220000, PON 0x13 SID 0 with resin IRQ 6 (dts resin interrupts 0x13/6), volume up =
+# pm8550@1 (SID 1) gpio block 0x8800 GPIO 6 = peripheral 0x8d00 = PPID 0x18d, active low with pull-up, dts key_vol_up).
+# HidInputProbe (aston's file) loads IOHIDFamily, starts the device on IOHIDResource with offline-hid-input=1 +
+# offline-hid-home=1, and offline-hid-auto-home=<seconds after the second presented frame> presses Home through the real
+# stack once the display presents frames (unattended hardware, no external harness). The arm64e vtable re-signing binds the
+# owned IOHIDDevice subclass to the original IOHIDDevice of this fileset (fixture hid-device-24A446-d94ap.json, same
+# kernelcache fa07057b as the display fixture).
+HID_PATH, hid_abi = fixture('hid-device')
+hid_slots = [(int(t, 16), int(d, 16)) for t, d in hid_abi['slots']]
+hid_pure = {i for i, (t, _) in enumerate(hid_slots) if t == slots[214][0]}
+
+import importlib.util
+import shutil
+
+
+def load_helper(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+headers_helper = load_helper('source_storage_headers', ROOT / 'scripts/prepare-storage-headers.py')
+import tomllib
+hid_profile = tomllib.loads((ROOT / 'profiles/os/ios-27.0.1-24A446/profile.toml').read_text())
+hid_pins = {entry['name']: entry for entry in hid_profile.get('source', [])}
+hid_feed = ROOT / 'refer/IOHIDFamily'
+headers_helper.pinned_source(hid_feed, hid_pins['IOHIDFamily']['commit'])
+hid_include = OUT / 'hid-headers/include'
+(hid_include / 'IOKit/hid').mkdir(parents=True, exist_ok=True)
+(hid_include / 'IOKit/hidsystem').mkdir(parents=True, exist_ok=True)
+for source_dir, relative in ((hid_feed / 'IOHIDFamily', 'IOKit/hid'), (hid_feed / 'IOHIDSystem/IOKit/hidsystem', 'IOKit/hidsystem')):
+    for path in sorted(source_dir.glob('*.h')):
+        shutil.copyfile(path, hid_include / relative / path.name)
+hid_source = ROOT / 'kits/sheng/NativeHidInput.cpp'
+compile_cpp(hid_source, OUT / 'NativeHidInput.o', extra=('-DNATIVE_HID_SOURCE_API=1', '-I', str(hid_include)))
+buttons_source = ROOT / 'kits/sheng/ButtonProbe.cpp'
+compile_cpp(buttons_source, OUT / 'ButtonProbe.o')
+hid_probe_source = ROOT / 'kits/sheng/HidInputProbe.cpp'
+compile_cpp(hid_probe_source, OUT / 'HidInputProbe.o')
+
+hid_raw = (OUT / 'NativeHidInput.o').read_bytes()
+
+
+def object_symbols(data):
+    commands = macho(data)['commands']
+    st = next(p for c, p, _ in commands if c == 2)
+    sy, count, strings, _ = struct.unpack_from('<4I', data, st + 8)
+    found = []
+    for i in range(count):
+        ix, kind, _, _, va = struct.unpack_from('<IBBHQ', data, sy + i * 16)
+        found.append((data[strings + ix:data.index(b'\0', strings + ix)].decode(), va, kind))
+    return found
+
+
+def object_vtable(data, found, name, count):
+    """[(symbol, signed word)] of the first count entries of vtable name (authenticated pointer relocations)."""
+    va = next(v for n, v, _ in found if n == name)
+    entries = {}
+    for segment in macho(data)['segments']:
+        for sec in segment['sections']:
+            if sec['va'] <= va < sec['va'] + sec['size']:
+                ro, rc = struct.unpack_from('<2I', data, sec['command_offset'] + 56)
+                for i in range(rc):
+                    offset, bits = struct.unpack_from('<2I', data, ro + i * 8)
+                    if bits >> 27 & 1 and bits >> 25 & 3 == 3 and bits >> 28 == 11:
+                        entries[sec['va'] + offset] = (found[bits & 0xffffff][0],
+                                                       struct.unpack_from('<Q', data, sec['fileoff'] + offset)[0])
+    return [entries.get(va + 16 + i * 8) for i in range(count)]
+
+
+hid_found = object_symbols(hid_raw)
+hid_bindings = {n: int(v, 16) + slide for n, v in hid_abi['bindings'].items()}
+by_diversity = {}
+for i, (_, d) in enumerate(hid_slots):
+    by_diversity.setdefault(d, []).append(i)
+hid_vtables = [n for n, _, k in hid_found if n.startswith('__ZTV') and k != 1 and '9MetaClassE' not in n]
+# An original method in an owned vtable is bound to the original entry of that slot (a base-class override signs with the
+# discriminator of the introducing IOService declaration, so its own name does not identify the slot); any other import by
+# the slot whose discriminator its name has.
+slot_of = {}
+for vt_name in hid_vtables:
+    for i, entry in enumerate(object_vtable(hid_raw, hid_found, vt_name, len(hid_slots))):
+        if entry and '11IOHIDDevice' in entry[0]:
+            require(slot_of.setdefault(entry[0], i) == i, f'{entry[0]}: one slot in every owned vtable')
+for name in sorted({n for n, _, k in hid_found if k == 1 and ('11IOHIDDevice' in n)} - set(hid_bindings)):
+    if name in slot_of:
+        slot = slot_of[name]
+    else:
+        matches = by_diversity.get(discriminator(name[1:]), [])
+        require(len(matches) == 1, f'{name}: one original IOHIDDevice slot with its discriminator')
+        slot = matches[0]
+    require(slot not in hid_pure, f'{name}: not an abstract original slot')
+    hid_bindings[name] = hid_slots[slot][0] + slide
+for vt_name in hid_vtables:
+    entries = object_vtable(hid_raw, hid_found, vt_name, len(hid_slots))
+    require(all(entries), f'{vt_name}: at least the {len(hid_slots)} IOHIDDevice entries')
+    for i, (name, word) in enumerate(entries):
+        require(word >> 63 and word >> 48 & 1 and word >> 49 & 3 == 0 and (word >> 32) & 0xffff == hid_slots[i][1],
+                f'{vt_name} slot {i} ({name}) signed with the original diversity {hid_slots[i][1]:#x}')
+        if '11IOHIDDevice' in name:
+            require(hid_bindings.get(name) == hid_slots[i][0] + slide, f'{vt_name} slot {i} ({name}) is the original entry')
+HID_DATA = {'__ZN11IOHIDDevice10gMetaClassE', '__ZTV11IOHIDDevice'}
+hid_text, hid_addresses = '.text\n.p2align 2\n', ''
+for name, va in sorted(hid_bindings.items()):
+    if name in HID_DATA:
+        hid_addresses += f'.globl {name}\n.set {name}, {va:#x}\n'
+    else:
+        hid_addresses += f'.globl {name}.original\n.set {name}.original, {va:#x}\n'
+        hid_text += f'.globl {name}\n{name}:\n bti c\n b {name}.original\n'
+(OUT / 'hid-bindings.S').write_text(hid_text)
+(OUT / 'hid-addresses.S').write_text(hid_addresses)
+for stem in ('hid-bindings', 'hid-addresses'):
+    run(['xcrun', 'clang', '-target', TRIPLE, '-isysroot', sdk, '-c', OUT / (stem + '.S'), '-o', OUT / (stem + '.o')])
+hid_late = OUT / 'NativeHidInput.late.o'
+run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func', '--globalize-symbol=__GLOBAL__sub_I_NativeHidInput.cpp',
+     OUT / 'NativeHidInput.o', hid_late])
+input_objects = [hid_late, OUT / 'hid-bindings.o', OUT / 'hid-addresses.o', OUT / 'HidInputProbe.o', OUT / 'ButtonProbe.o']
+print(f'HID: {len(hid_bindings)} original IOHIDDevice bindings, vtables {hid_vtables} match the original diversities')
+
 archive = OUT / 'libNativeLegacyDisplay.late.a'
 archive.unlink(missing_ok=True)
 run(['xcrun', 'ar', 'rcs', archive, late, OUT / 'original-bindings.o', OUT / 'original-addresses.o', OUT / 'LegacyDisplayProbe.o', OUT / 'LegacyDisplaySupport27.o', OUT / 'HoujiDisplayStandins.o', gop_late,
-     OUT / 'KeyStoreProbe.o', keyevents_late])
+     OUT / 'KeyStoreProbe.o', keyevents_late] + input_objects)
 
 sources = [ROOT / 'drivers/GopFramebuffer/NativeLegacyDisplay.cpp', ROOT / 'drivers/GopFramebuffer/NativeLegacyRequest.h',
            ROOT / 'drivers/GopFramebuffer/NativeGOPPresenter.cpp', ROOT / 'drivers/GopFramebuffer/NativeGOPWire.h',
            ROOT / 'drivers/GopFramebuffer/NativeHalfCodes.h', source, standins, keystore_source,
-           ROOT / 'drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp', ABI_PATH]
+           ROOT / 'drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp', hid_source, buttons_source, hid_probe_source,
+           HID_PATH, ABI_PATH]
 
 
 def source_name(path):
