@@ -137,7 +137,11 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # reg 0x8800) 6 1>). offline-hid-auto-home=20 = one unattended Home press 20 s after the second presented frame (aston
   # HidInputProbe's documented mechanism for hardware without an external input harness) - it dismisses the lock screen so the
   # desktop renders while the touch driver round is still pending.
-  "offline-hid-input=1", "offline-hid-home=1", "offline-hid-auto-home=20", "buttons=1"]
+  # r69 (2026-11-25): the hardware button chain is device-proven (volume HUD + power lock/unlock, video r68_buttons.mp4), so the
+  # press mechanism works; the single press (count=1) fired ~20 s after the first presented frames - the Setup flash already
+  # presents - and was likely spent before the lock screen appeared. The existing knobs widen it: 8 presses every 30 s cover
+  # ~4 minutes after arming, so one lands while the lock screen is up.
+  "offline-hid-input=1", "offline-hid-home=1", "offline-hid-auto-home=20", "offline-hid-auto-home-count=8", "offline-hid-auto-home-interval=30", "buttons=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"
