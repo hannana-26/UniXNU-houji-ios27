@@ -375,6 +375,16 @@ extern "C" void boot_progress_stage(const char *) {}
 extern "C" int boot_progress_pulse_anchor(uintptr_t,uint64_t,unsigned,unsigned,unsigned) {return 0;}
 ''')
 compile_cpp(support, OUT / 'LegacyDisplaySupport27.o')
+# r67 (2026-11-25): the keystore state service (AppleKeyStoreState) and its probe, restored from the aston iOS 27 builder.
+# r63/r66 trimmed it away and shipped without any AppleKeyStore: MKBEventsRegister then fails, liveactivitiesd dies at every
+# start, chronod waits on it and SpringBoard on chronod (UniXNU-official docs/devices/venus.md:405, opi5plus.md:277).
+keystore_source = ROOT / 'kits/sheng/KeyStoreProbe.cpp'
+compile_cpp(keystore_source, OUT / 'KeyStoreProbe.o')
+print(run(['python3', ROOT / 'scripts/build-arm-driver.py', 'NativeKeyStoreEvents'], text=True), end='')
+keyevents = ROOT / 'build/apple-key-store-state'
+keyevents_late = keyevents / 'NativeKeyStoreEvents.late.o'
+run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func', '--globalize-symbol=__GLOBAL__sub_I_NativeKeyStoreEvents.cpp',
+     keyevents / 'NativeKeyStoreEvents.o', keyevents_late])
 print(run(['python3', ROOT / 'scripts/build-arm-driver.py', 'NativeGOPPresenter'], text=True), end='')
 gop = ROOT / 'build/native-gop-presenter'
 gop_late = gop / 'NativeGOPPresenter.late.o'
@@ -382,11 +392,13 @@ run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func', '--global
      gop / 'NativeGOPPresenter.o', gop_late])
 archive = OUT / 'libNativeLegacyDisplay.late.a'
 archive.unlink(missing_ok=True)
-run(['xcrun', 'ar', 'rcs', archive, late, OUT / 'original-bindings.o', OUT / 'original-addresses.o', OUT / 'LegacyDisplayProbe.o', OUT / 'LegacyDisplaySupport27.o', OUT / 'HoujiDisplayStandins.o', gop_late])
+run(['xcrun', 'ar', 'rcs', archive, late, OUT / 'original-bindings.o', OUT / 'original-addresses.o', OUT / 'LegacyDisplayProbe.o', OUT / 'LegacyDisplaySupport27.o', OUT / 'HoujiDisplayStandins.o', gop_late,
+     OUT / 'KeyStoreProbe.o', keyevents_late])
 
 sources = [ROOT / 'drivers/GopFramebuffer/NativeLegacyDisplay.cpp', ROOT / 'drivers/GopFramebuffer/NativeLegacyRequest.h',
            ROOT / 'drivers/GopFramebuffer/NativeGOPPresenter.cpp', ROOT / 'drivers/GopFramebuffer/NativeGOPWire.h',
-           ROOT / 'drivers/GopFramebuffer/NativeHalfCodes.h', source, standins, ABI_PATH]
+           ROOT / 'drivers/GopFramebuffer/NativeHalfCodes.h', source, standins, keystore_source,
+           ROOT / 'drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp', ABI_PATH]
 
 
 def source_name(path):

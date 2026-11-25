@@ -11,7 +11,7 @@ kit = "sheng"
 os_profile = "ios-27.0.1-24A446"
 
 [components]
-include = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock", "GopFramebuffer"]
+include = ["ArmDTPlatform", "ArmCpu", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock", "GopFramebuffer", "AppleKeyStoreState"]
 
 # The iOS root image (SHNGROOT manifest, OS and SystemOS windows, OS.vroot/SystemOS.vroot tables) is flashed over the whole
 # Android "userdata" partition (LUN 0, 4096-byte sectors). ShengUfs matches that GPT name (drivers/ShengUfs/RootLayout.h) and
@@ -37,6 +37,8 @@ archives = [
   "component:ShengUfs",
   "build-sheng-source-storage.py --policy-dir scripts/policies/ios-27.0.1-24A446",
   "component:RamBlock",
+  # r67 (2026-11-25): AppleKeyStore state stand-in (as aston.board.toml:57), built before the display builder links it.
+  "component:AppleKeyStoreState",
   # r63 display bring-up (as aston's iOS 27 chain): the board builder binds the owned GOP backend to the
   # original IOMobileFramebufferLegacy of the iPhone17,2 (D94AP) 24A446 fileset (fixture
   # legacy-display-24A446-d94ap.json, kernelcache fa07057b... = our XnuPrelink fixture) and links the
@@ -122,7 +124,12 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   "offline-mobile-graphics-load=1", "offline-mobile-graphics-client=1", "offline-legacy-register=1",
   "offline-legacy-gop=1", "offline-legacy-unit-scale=3", "offline-legacy-pm=1", "offline-legacy-validate=1",
   "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "vsync=60",
-  "sheng-skip-setup=1"]
+  "sheng-skip-setup=1",
+  # r67 (2026-11-25): the AppleKeyStore stand-in r63/r66 lacked (aston board.toml:111-112, sheng :61): the service is attached only
+  # with offline-key-events=1 AND sheng-aks=1 (KeyStoreProbe.cpp). Without it MKBEventsRegister fails, liveactivitiesd traps at every
+  # start, chronod and SpringBoard wait on it (official venus.md:405). boot-ui-trace=1 + focus slots put the stacks of the three
+  # processes on that chain into the logfs record (sheng BootLog.c/BootProcessProbe.c), so one short read-back explains a failure.
+  "offline-key-events=1", "sheng-aks=1", "boot-ui-trace=1", "boot-ui-focus=liveactivitiesd", "boot-ui-focus3=chronod"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

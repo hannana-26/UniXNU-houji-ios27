@@ -497,7 +497,12 @@ void native_legacy_display_probe(void) {
 void native_legacy_display_late_probe(void);
 // houji trim (2026-11-24): the aston/sheng board probes above the display lifecycle are not
 // ported; the late probe starts the display directly.
+// r67 (2026-11-25): the one board probe that must stay is the AppleKeyStore state service (package/KeyStoreProbe.cpp,
+// aston's file unchanged): without it MKBEventsRegister fails and SpringBoard never takes the display. It is gated by
+// offline-key-events=1 and sheng-aks=1 and runs first, as aston's late probe does.
+extern void native_keystore_probe(void);
 void native_legacy_display_late_probe(void) {
+    native_keystore_probe();
     IOService *display=pendingLegacyDisplay;if(!display)return;pendingLegacyDisplay=nullptr;
     native_legacy_surface_status=OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
     OSDictionary *matching=IOService::nameMatching("IOCoreSurfaceRoot");

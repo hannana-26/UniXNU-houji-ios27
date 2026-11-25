@@ -2239,7 +2239,11 @@ void boot_log_tick(unsigned now) {
   export_lock = IOLockAlloc();
 #if defined(NATIVE_BOOT_PROCESS_CAPTURE) && NATIVE_BOOT_PROCESS_CAPTURE
   uint32_t diag = 0;
-  if (PE_parse_boot_argn("sheng-diag", &diag, sizeof diag) && diag == 1) boot_process_start();
+  // r67: as sheng's BootLog.c, the process stack worker also starts on its own with boot-ui-trace=1 (the worker checks that
+  // switch), so the logfs record carries SpringBoard/liveactivitiesd/chronod stacks without turning every diagnostic on.
+  uint32_t trace = 0;
+  if ((PE_parse_boot_argn("sheng-diag", &diag, sizeof diag) && diag == 1) ||
+      (PE_parse_boot_argn("boot-ui-trace", &trace, sizeof trace) && trace == 1)) boot_process_start();
 #endif
   thread_t thread;
   if (kernel_thread_start_priority(writer, 0, BASEPRI_KERNEL, &thread) == KERN_SUCCESS) thread_deallocate(thread);
