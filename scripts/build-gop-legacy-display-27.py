@@ -436,7 +436,14 @@ for source_dir, relative in ((hid_feed / 'IOHIDFamily', 'IOKit/hid'), (hid_feed 
     for path in sorted(source_dir.glob('*.h')):
         shutil.copyfile(path, hid_include / relative / path.name)
 hid_source = ROOT / 'kits/sheng/NativeHidInput.cpp'
-compile_cpp(hid_source, OUT / 'NativeHidInput.o', extra=('-DNATIVE_HID_SOURCE_API=1', '-I', str(hid_include)))
+# XNU's own headers keep precedence; the macOS SDK's Kernel.framework supplies what the source checkout lacks (TargetConditionals.h,
+# generated HIDDriverKit declarations), same as aston build-aston-source-drivers.py:128-132. This is the macosx SDK, not the
+# iphoneos one in `sdk` above.
+macos_sdk = Path(run(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
+hid_sdk_kernel = macos_sdk / 'System/Library/Frameworks/Kernel.framework/Versions/A/Headers'
+require(hid_sdk_kernel.is_dir(), f'{hid_sdk_kernel}: macOS Kernel.framework headers')
+compile_cpp(hid_source, OUT / 'NativeHidInput.o',
+            extra=('-DNATIVE_HID_SOURCE_API=1', '-I', str(hid_include), '-idirafter', str(hid_sdk_kernel)))
 buttons_source = ROOT / 'kits/sheng/ButtonProbe.cpp'
 compile_cpp(buttons_source, OUT / 'ButtonProbe.o')
 hid_probe_source = ROOT / 'kits/sheng/HidInputProbe.cpp'
