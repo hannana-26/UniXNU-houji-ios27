@@ -106,6 +106,10 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # obliteration, fairplayd, coreduetd, ...); BootWatchdogPolicy.c writes them into launchd's
   # disabled.plist on the writable Data volume. Also the top candidate behind boot1's restart request.
   "sheng-disable-watchdogd=1", "sheng-lite=1",
+  # r66 (2026-11-25, fuxi-oddlylabs/sirius precedent): BootWatchdogPolicy.c writes the skip-setup
+  # preference profile (purplebuddy SetupDone, migration 24A446, springboard no-auto-dim) into the
+  # mounted persistent Data before launchd, so the boot skips "Press home to upgrade" (r63d reached
+  # that Setup screen with no input device). Seed stays pinned; the profile is written on-device.
   # r63 display bring-up (2026-11-24, the aston iOS 27 display argument group, minus its GPU members:
   # no Adreno here, so the CPU copy path presents the frames). offline-legacy-gop=1 lets
   # NativeLegacyDisplay::startHardware accept the firmware GOP framebuffer (PE_current_console, fed by
@@ -117,7 +121,8 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # with the touch/backlight round.
   "offline-mobile-graphics-load=1", "offline-mobile-graphics-client=1", "offline-legacy-register=1",
   "offline-legacy-gop=1", "offline-legacy-unit-scale=3", "offline-legacy-pm=1", "offline-legacy-validate=1",
-  "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "vsync=60"]
+  "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "vsync=60",
+  "sheng-skip-setup=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

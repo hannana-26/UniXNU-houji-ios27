@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Explicit temporary bring-up policy for an unavailable watchdog backend.
 // Runs after writable scratch Data mounts, before the unchanged launchd exec.
+// One houji addition beyond sheng's policy (r66, 2026-11-25): sheng-skip-setup=1 writes the
+// skip-setup preference profile into the mounted persistent Data volume from the kernel
+// (sheng_boot_skip_setup below), ported from fuxi-oddlylabs package/BootWatchdogPolicy.c
+// (sheng-skip-setup=1, same structure), whose values trace to OddlyLabs/UniXNU
+// scripts/seed-data-skip-setup.py (dipa-studio/ios-sweet, hardware-established). The host-side
+// seed tool cannot be used here: houji's Data is a persistent store and the seed is pinned
+// (P10), so the profile must be written on-device. Build-specific values are 24A446, not
+// 21H461: LastSystemVersion must equal the running OS build or the system migrates its data
+// on the first boot (progress bar under the Apple logo).
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
@@ -64,6 +73,213 @@ static int sheng_boot_setup_reset(proc_t p,uint64_t scratch) {
  return 0;
 }
 
+// The skip-setup profile (r66, ported from fuxi-oddlylabs BootWatchdogPolicy.c; values trace to
+// OddlyLabs/UniXNU scripts/seed-data-skip-setup.py and dipa-studio/ios-sweet's hardware set). The
+// seed tool merges keys into existing files; this writer replaces the files, which is safe only
+// under the SetupDone gate in sheng_boot_skip_setup: it writes while the files are still first-run
+// files and never touches them again once Setup reads as done. The springboard file carries the
+// tool's --no-auto-dim keys: without them SpringBoard dims and sleeps about 30 s after it starts
+// on a board with no input, and the boot looks dead. Build values are 24A446 (iOS 27.0.1).
+static const char pref_purplebuddy[]=
+ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+ "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+ "<plist version=\"1.0\">\n"
+ "<dict>\n"
+ "\t<key>SetupDone</key>\n"
+ "\t<true/>\n"
+ "\t<key>SetupFinishedAllSteps</key>\n"
+ "\t<true/>\n"
+ "\t<key>SetupVersion</key>\n"
+ "\t<integer>11</integer>\n"
+ "\t<key>daemonizeNeedsToRun</key>\n"
+ "\t<false/>\n"
+ "</dict>\n"
+ "</plist>\n";
+static const char pref_purplebuddy_nb[]=
+ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+ "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+ "<plist version=\"1.0\">\n"
+ "<dict>\n"
+ "\t<key>ShouldRunDiagnosticsMiniBuddy</key>\n"
+ "\t<false/>\n"
+ "\t<key>ShouldRunHSA2MiniBuddy</key>\n"
+ "\t<false/>\n"
+ "\t<key>ShouldRunKeychainSyncMiniBuddy</key>\n"
+ "\t<false/>\n"
+ "\t<key>ShouldRunMesaMiniBuddy</key>\n"
+ "\t<false/>\n"
+ "\t<key>ShouldRunPaymentMiniBuddy</key>\n"
+ "\t<false/>\n"
+ "\t<key>ShouldRunStandardMiniBuddy</key>\n"
+ "\t<false/>\n"
+ "\t<key>SilentICDPUpgrade</key>\n"
+ "\t<false/>\n"
+ "</dict>\n"
+ "</plist>\n";
+static const char pref_mc_nb[]=
+ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+ "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+ "<plist version=\"1.0\">\n"
+ "<dict>\n"
+ "\t<key>LockdownActivationIndicatesCloudConfigurationAvailable</key>\n"
+ "\t<false/>\n"
+ "</dict>\n"
+ "</plist>\n";
+static const char pref_migration[]=
+ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+ "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+ "<plist version=\"1.0\">\n"
+ "<dict>\n"
+ "\t<key>DMUserDataDisposition</key>\n"
+ "\t<dict>\n"
+ "\t\t<key>SyntheticDidUpgrade</key>\n"
+ "\t\t<false/>\n"
+ "\t\t<key>buildVersion</key>\n"
+ "\t\t<string>24A446</string>\n"
+ "\t</dict>\n"
+ "\t<key>LastSystemVersion</key>\n"
+ "\t<string>24A446</string>\n"
+ "</dict>\n"
+ "</plist>\n";
+static const char pref_springboard[]=
+ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+ "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+ "<plist version=\"1.0\">\n"
+ "<dict>\n"
+ "\t<key>BKNoWatchdogs</key>\n"
+ "\t<true/>\n"
+ "\t<key>FBLaunchWatchdogExceptions</key>\n"
+ "\t<dict>\n"
+ "\t\t<key>com.apple.purplebuddy</key>\n"
+ "\t\t<real>100.0</real>\n"
+ "\t</dict>\n"
+ "\t<key>MCForceShowCloudConfigurationUI</key>\n"
+ "\t<false/>\n"
+ "\t<key>SBDisableAutoDim</key>\n"
+ "\t<true/>\n"
+ "\t<key>SBDisableIdleSleep</key>\n"
+ "\t<true/>\n"
+ "\t<key>SBDontDimOrLockOnAC</key>\n"
+ "\t<true/>\n"
+ "</dict>\n"
+ "</plist>\n";
+static const struct {const char *name;const char *text;} skip_setup_prefs[]={
+ {"com.apple.purplebuddy.plist",pref_purplebuddy},
+ {"com.apple.purplebuddy.notbackedup.plist",pref_purplebuddy_nb},
+ {"com.apple.managedconfiguration.notbackedup.plist",pref_mc_nb},
+ {"com.apple.migration.plist",pref_migration},
+ {"com.apple.springboard.plist",pref_springboard}};
+
+// mkdir every level of an absolute directory path; EEXIST is fine. Same scratch discipline as the
+// writes below: the path goes at +0.
+static int policy_mkdir_chain(proc_t p,uint64_t scratch,const char *path) {
+ char buf[256];size_t n=strlen(path);if(n>=sizeof(buf))return ENAMETOOLONG;memcpy(buf,path,n+1);
+ for(size_t i=1;i<=n;++i) {
+  if(buf[i]!='/' && buf[i]!=0)continue;
+  char save=buf[i];buf[i]=0;
+  int error=copyout(buf,scratch,strlen(buf)+1);
+  if(!error) {struct mkdir_args md={.path=scratch,.mode=0755};int32_t result=0;error=mkdir(p,&md,&result);if(error==EEXIST)error=0;}
+  buf[i]=save;
+  if(error)return error;
+ }
+ return 0;
+}
+
+// Write one file with the disabled.plist write's discipline: path at +0, content out in 0x1f0 pieces
+// through +0x200 (the cache-mount environment slots live at +0x400), stat buffer at +0x800, and the
+// same close-out verification (owner, mode, regular file, exact size).
+static int policy_write_file(proc_t p,uint64_t scratch,const char *path,const char *text,uid_t uid,gid_t gid,unsigned mode) {
+ int error=0,fd=-1;int32_t result=0;
+ if((error=copyout(path,scratch,strlen(path)+1)))goto done;
+ struct open_args op={.path=scratch,.flags=O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,.mode=mode};
+ if((error=open(p,&op,&result)))goto done;
+ fd=result;
+ for(size_t sent=0,total=strlen(text);sent<total;) {
+  size_t piece=total-sent<0x1f0?total-sent:0x1f0;
+  if((error=copyout(text+sent,scratch+0x200,piece)))goto done;
+  struct write_args wr={.fd=fd,.cbuf=scratch+0x200,.nbyte=piece};
+  user_ssize_t written=0;
+  if((error=write(p,&wr,&written)))goto done;
+  if(written!=(user_ssize_t)piece){error=EIO;goto done;}
+  sent+=piece;
+ }
+ struct fchown_args owner={.fd=fd,.uid=uid,.gid=gid};
+ if((error=fchown(p,&owner,&result)))goto done;
+ struct fchmod_args fm={.fd=fd,.mode=mode};
+ if((error=fchmod(p,&fm,&result)))goto done;
+ struct fsync_args sync={.fd=fd};
+ if((error=fsync(p,&sync,&result)))goto done;
+ struct fstat64_args sa={.fd=fd,.ub=scratch+0x800};struct stat64 st={0};
+ if((error=sys_fstat64(p,&sa,&result)) || (error=copyin(sa.ub,&st,sizeof(st))))goto done;
+ if(st.st_uid!=uid || st.st_gid!=gid || !S_ISREG(st.st_mode) || (st.st_mode&0777)!=mode || st.st_size!=(off_t)(strlen(text)))error=EINVAL;
+ done:
+ if(fd>=0){struct close_args cl={.fd=fd};int e=sys_close(p,&cl,&result);if(!error)error=e;}
+ return error;
+}
+
+static char probe_buf[8192];
+// 1 when the existing purplebuddy plist already records Setup as done, 0 when it does not, -1 when it
+// cannot be read. The byte string "SetupDone" appears in both the XML and the binary plist encodings,
+// so a raw scan settles it without a plist parser. Only the first 8 KiB are scanned: a first-run
+// purplebuddy plist is a few hundred bytes, and a miss on a larger file falls back to writing, which
+// is the pre-gate behaviour.
+static int policy_setup_done(proc_t p,uint64_t scratch) {
+ const char *path="/private/var/mobile/Library/Preferences/com.apple.purplebuddy.plist";
+ int32_t result=0;int fd=-1;
+ if(copyout(path,scratch,strlen(path)+1))return -1;
+ struct open_args op={.path=scratch,.flags=O_RDONLY|O_NOFOLLOW};
+ if(open(p,&op,&result))return -1;
+ fd=result;
+ size_t got=0;
+ while(got<sizeof(probe_buf)) {
+  size_t want=sizeof(probe_buf)-got<0x1f0?sizeof(probe_buf)-got:0x1f0;
+  struct read_args rd={.fd=fd,.cbuf=scratch+0x200,.nbyte=want};
+  user_ssize_t n=0;
+  if(read(p,&rd,&n) || n<=0)break;
+  if(copyin(scratch+0x200,probe_buf+got,(size_t)n))break;
+  got+=(size_t)n;
+  if((size_t)n<want)break;
+ }
+ {struct close_args cl={.fd=fd};sys_close(p,&cl,&result);}
+ if(!got)return -1;
+ const char needle[]="SetupDone";
+ for(size_t i=0;i+sizeof(needle)-1<=got;++i)if(!memcmp(probe_buf+i,needle,sizeof(needle)-1))return 1;
+ return 0;
+}
+
+// The writer's outcome, exported for a future progress probe: the writer's own printf lines live
+// only in the console stream and never reach a photographed page. result is -1 until the writer
+// runs, then its first collected error (0 = the profile is in place); probe is -2 until it runs,
+// then policy_setup_done's value (-1 unreadable, 0 Setup was not done and the writer wrote, 1 Setup
+// already done and nothing was written).
+volatile int sheng_skip_setup_result=-1;
+volatile int sheng_skip_setup_probe=-2;
+
+// sheng-skip-setup=1: write the skip-setup profile into the mounted (persistent) Data volume. The
+// caller ignores this function's return value on purpose: the policy's own return value panics
+// load_init_program, and a preference write must never be able to stop a boot. The worst outcome of
+// any failure here is that the Setup pages appear.
+static int sheng_boot_skip_setup(proc_t p,uint64_t scratch) {
+ const char *dir="/private/var/mobile/Library/Preferences";
+ int probe=policy_setup_done(p,scratch);
+ sheng_skip_setup_probe=probe;
+ if(probe==1){sheng_skip_setup_result=0;printf("sheng skip-setup: Setup already done, preferences left alone\n");return 0;}
+ int first=0,error=policy_mkdir_chain(p,scratch,dir);if(error)first=error;
+ for(unsigned i=0;i<sizeof(skip_setup_prefs)/sizeof(skip_setup_prefs[0]);++i) {
+  char path[256];
+  strlcpy(path,dir,sizeof(path));strlcat(path,"/",sizeof(path));strlcat(path,skip_setup_prefs[i].name,sizeof(path));
+  error=policy_write_file(p,scratch,path,skip_setup_prefs[i].text,501,501,0600);
+  if(error && !first)first=error;
+ }
+ // The container directories the seed tool creates alongside the preferences; on this Data volume
+ // the system has long since made them, so these are belt and braces for a younger volume.
+ static const char *const containers[]={"/private/var/containers/Bundle","/private/var/containers/Data/System","/private/var/containers/Shared/SystemGroup","/private/var/containers/Temp"};
+ for(unsigned i=0;i<sizeof(containers)/sizeof(containers[0]);++i){error=policy_mkdir_chain(p,scratch,containers[i]);if(error && !first)first=error;}
+ printf("sheng skip-setup preferences: %d (probe %d)\n",first,probe);
+ sheng_skip_setup_result=first;
+ return first;
+}
+
 // One comma-separated label at *c into the policy as a disabled key; advances *c past it.
 static int append_job(const char **cursor) {
  const char *c=*cursor,*e=c;while(*e && *e!=',')++e;
@@ -96,6 +312,15 @@ int sheng_boot_watchdog_policy(void *process, uint64_t scratch) {
   return error;
  }
  if(setup==1)printf("sheng setup flags reset: Hello page on this boot\n");
+ // r66 skip-setup (houji): the writer's result is deliberately not propagated - this function's
+ // return value panics load_init_program, and marking Setup done must never stop a boot. Do not
+ // set sheng-setup/data-reset=2 and sheng-skip-setup together: the reset above deletes the
+ // purplebuddy files first and the writer would recreate them, so the boot would skip Setup after
+ // all. board.toml carries only sheng-skip-setup=1 on regular images.
+ int skip_setup=0;
+ PE_parse_boot_argn("sheng-skip-setup",&skip_setup,sizeof(skip_setup));
+ if(skip_setup!=1)skip_setup=0;
+ if(skip_setup==1)sheng_boot_skip_setup(p,scratch);
  if(!enabled && !jobs[0] && !lite)return 0;
  policy[0]=0;strlcat(policy,policy_head,sizeof(policy));
  if(enabled)strlcat(policy,policy_watchdogd,sizeof(policy));
