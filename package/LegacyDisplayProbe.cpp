@@ -512,11 +512,21 @@ extern "C" void sheng_buttons_probe(void);
 // It publishes the finger set to NativeHidInput's seqlock (the sink is registered by NativeHidInput
 // itself when sheng-touch-hid=1 is on the command line).
 extern "C" void native_touch_probe(void);
+// r72 (2026-11-26): the houji backlight service joins the late probe - houji_backlight_start
+// (package/HoujiBacklight.cpp, the lonzzi/nian0114 engine borrowed and printf-adapted, inc sha
+// 528b5391...) maps the firmware-enabled DSI0 command controller (0x0ae94000), reads the panel's
+// current level back with DCS 0x52 and publishes IODisplayParameters + backlight-control for
+// CoreBrightness; backboardd's brightness sets pass through the two IOUserClient hooks
+// (patches/xnu-12377/houji-backlight-hooks.patch, sheng int-236/int-276 contract). Gated inside
+// by houji_bl (default on; board.toml passes houji_bl=1 explicitly). The heartbeat printf keeps
+// the logfs tail alive (纲领 §4.12). No MDSS/SDE/GPU registers are touched.
+void houji_backlight_start(IOService *provider);
 void native_legacy_display_late_probe(void) {
     native_keystore_probe();
     native_hid_input_probe();
     sheng_buttons_probe();
     native_touch_probe();
+    houji_backlight_start(IOService::getResourceService());
     IOService *display=pendingLegacyDisplay;if(!display)return;pendingLegacyDisplay=nullptr;
     native_legacy_surface_status=OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
     OSDictionary *matching=IOService::nameMatching("IOCoreSurfaceRoot");

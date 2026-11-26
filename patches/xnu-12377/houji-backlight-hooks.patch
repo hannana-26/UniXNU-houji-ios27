@@ -1,0 +1,27 @@
+--- a/iokit/Kernel/IOUserClient.cpp
++++ b/iokit/Kernel/IOUserClient.cpp
+@@ -2561,6 +2561,16 @@
+ }
+ 
+ /* Routine io_object_conforms_to */
++// r72 (2026-11-26) houji backlight hook (package/HoujiBacklight.cpp, device kit):
++// CoreBrightness drives a backlight only when IOObjectConformsTo(service,
++// "AppleARMBacklight") holds (CBDisplayContaineriOS findBacklight); our service
++// keeps its real class and answers the query through this hook - the name itself
++// is taken by AppleARMPlatform (a duplicate class name panics registration, int-229).
++// The property grant needs no patch: native_sandbox_grant below already stands in
++// for the sandbox verdict on set-properties (int-276) for services that publish
++// NativeSandboxGrantProcess, which HoujiBacklight.cpp does in publishFirst.
++extern "C" bool houji_backlight_conforms(const OSObject *object, const char *className);
++
+ kern_return_t
+ is_io_object_conforms_to(
+ 	io_object_t object,
+@@ -2572,6 +2582,7 @@
+ 	}
+ 
+ 	*conforms = (NULL != object->metaCast( className ));
++	if (!*conforms) *conforms = houji_backlight_conforms(object, className);
+ 
+ 	return kIOReturnSuccess;
+ }

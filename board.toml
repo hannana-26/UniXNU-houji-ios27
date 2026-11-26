@@ -148,7 +148,13 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
    # sheng-touch-hid=1 makes NativeHidInput register its digitizer sink on the TouchProbe seqlock (our copy at
    # 71a40e7 parses the pre-rename name; upstream 1140614 renamed it to touch-hid - deliberately not taken this
    # round, minimal diff). ADT untouched (P12: no touch node in the ADT; lonzzi polls the IRQ GPIO instead).
-  "offline-touch=1", "sheng-touch-hid=1"]
+  "offline-touch=1", "sheng-touch-hid=1",
+   # r72 (2026-11-26, backlight round): houji_bl=1 starts the houji backlight service (HoujiBacklight.cpp, the
+   # lonzzi/nian0114 engine borrowed and printf-adapted) from the late probe. It maps the firmware-enabled DSI0
+   # command controller (0x0ae94000), reads the panel level back with DCS 0x52 and serves CoreBrightness's
+   # brightness/FadePeriod through the two IOUserClient hooks (sheng int-236/int-276 contract). The engine's own
+   # default is on; the arg keeps it explicit and reversible (houji_bl=0).
+  "houji_bl=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

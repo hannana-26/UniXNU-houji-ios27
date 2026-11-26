@@ -19,3 +19,10 @@ vmwait-dyld-pager-source-release.patch
 # houji-no-ttbr0-47.patch
 # r20: launchd's last user exception (pc/lr/far/esr/insn) in the initproc panic text.
 houji-initproc-fault-panic.patch
+# r72 (2026-11-26): houji backlight - CoreBrightness conformance hook only (package/HoujiBacklight.cpp):
+# is_io_object_conforms_to answers AppleARMBacklight for the service (int-229: the class name is taken).
+# The backboardd property grant needs NO patch: the stack's native_sandbox_grant gate
+# (IOUserClient.cpp set-properties, the int-276 comment) already grants services that publish
+# NativeSandboxGrantProcess - HoujiBacklight.cpp publishes it (= backboardd) in publishFirst.
+# Last in series.
+houji-backlight-hooks.patch

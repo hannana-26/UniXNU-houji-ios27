@@ -462,6 +462,15 @@ touch_source = ROOT / 'kits/sheng/TouchProbe.cpp'
 # lonzzi's build never enabled. Silence exactly that class for this one TU instead
 # of editing the verbatim headers.
 compile_cpp(touch_source, OUT / 'TouchProbe.o', extra=('-Wno-missing-field-initializers',))
+# r72 (2026-11-26): the houji backlight service joins the group - HoujiBacklight.cpp is the
+# lonzzi/nian0114 engine (HoujiBacklight.inc sha 528b5391..., device-proven: r227 readback +
+# registration, r229 user confirms dimming responds) adapted for logfs printf diagnostics and a
+# 15 s heartbeat; the DCS protocol header HoujiBacklightProtocol.h is byte-identical
+# (b15e8530..., hash-pinned). CoreBrightness contract served via the two IOUserClient hooks in
+# patches/xnu-12377/houji-backlight-hooks.patch. Gated by houji_bl (default on; the arg keeps it
+# explicit for the mk assertion). Plain POD statics only: no mod_init_func surgery needed.
+backlight_source = ROOT / 'kits/sheng/HoujiBacklight.cpp'
+compile_cpp(backlight_source, OUT / 'HoujiBacklight.o')
 
 hid_raw = (OUT / 'NativeHidInput.o').read_bytes()
 
@@ -539,7 +548,7 @@ for stem in ('hid-bindings', 'hid-addresses'):
 hid_late = OUT / 'NativeHidInput.late.o'
 run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func', '--globalize-symbol=__GLOBAL__sub_I_NativeHidInput.cpp',
      OUT / 'NativeHidInput.o', hid_late])
-input_objects = [hid_late, OUT / 'hid-bindings.o', OUT / 'hid-addresses.o', OUT / 'HidInputProbe.o', OUT / 'ButtonProbe.o', OUT / 'TouchProbe.o']
+input_objects = [hid_late, OUT / 'hid-bindings.o', OUT / 'hid-addresses.o', OUT / 'HidInputProbe.o', OUT / 'ButtonProbe.o', OUT / 'TouchProbe.o', OUT / 'HoujiBacklight.o']
 print(f'HID: {len(hid_bindings)} original IOHIDDevice bindings, vtables {hid_vtables} match the original diversities')
 
 archive = OUT / 'libNativeLegacyDisplay.late.a'
@@ -552,6 +561,7 @@ sources = [ROOT / 'drivers/GopFramebuffer/NativeLegacyDisplay.cpp', ROOT / 'driv
            ROOT / 'drivers/GopFramebuffer/NativeHalfCodes.h', source, standins, keystore_source,
            ROOT / 'drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp', hid_source, buttons_source, hid_probe_source,
            touch_source,
+           backlight_source,
            HID_PATH, ABI_PATH]
 
 
