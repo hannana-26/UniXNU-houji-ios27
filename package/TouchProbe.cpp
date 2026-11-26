@@ -243,7 +243,7 @@ static int htPrepare(void) {
 static int htRun(void) {
     htStage(1); int err = htPrepare(); if (err) return err;
     htStage(3);
-    struct gw_bus bus = {htBusRead, htBusWrite, htWait, 64, htDiscardReport}; struct gw_message msg = {0};
+    struct gw_bus bus = {htBusRead, htBusWrite, htWait, 64, htDiscardReport}; struct gw_message msg = {};
     err = gw_read(&bus, &msg);
     for (unsigned retry = 0; err == 2 && retry < 100; retry++) { htWait(10); err = gw_read(&bus, &msg); }
     printf("HOUJI TOUCH: first read result=%d code=%x bytes=%u\n", err, msg.code, msg.size);
@@ -254,7 +254,7 @@ static int htRun(void) {
     printf("HOUJI TOUCH: TouchCom v1 S3910 application firmware=%u\n", build);
     if (build != 4323384) return 141;
     unsigned advertised = gw_le16(msg.data + 22);
-    bus.max_write = advertised && advertised < GW_MAX + 3 ? advertised : GW_MAX + 3;
+    bus.max_write = advertised && advertised < GW_MAX + 3u ? advertised : GW_MAX + 3u;
     __atomic_store_n(&ht.deviceMaxWrite, advertised, __ATOMIC_RELAXED);
     __atomic_store_n(&ht.effectiveMaxWrite, bus.max_write, __ATOMIC_RELAXED);
     printf("HOUJI TOUCH: advertised write=%u bounded host write=%u\n", advertised, bus.max_write);
@@ -280,8 +280,10 @@ static int htRun(void) {
     struct hd_layout layout;
     if (hd_layout_parse(ht.reportConfig, msg.size, &layout)) return 240;
     char hex[97]; unsigned used = 0;
-    for (unsigned at = 0; at < msg.size && at < 32 && used + 4 < sizeof(hex); ++at)
-        used += snprintf(hex + used, sizeof(hex) - used, "%02x ", (unsigned)ht.reportConfig[at]);
+    for (unsigned at = 0; at < msg.size && at < 32 && used + 4 < sizeof(hex); ++at) {
+        int wrote = snprintf(hex + used, sizeof(hex) - used, "%02x ", (unsigned)ht.reportConfig[at]);
+        if (wrote > 0) used += (unsigned)wrote;
+    }
     printf("HOUJI TOUCH: descriptor %u bytes head: %s\n", msg.size, hex);
     uint8_t touch = 0x11; err = gw_command(&bus, 5, &touch, 1, &msg); if (err) return 260 + err;
     htStage(5); printf("HOUJI TOUCH: native contact descriptor validated; physical polling enabled\n");
