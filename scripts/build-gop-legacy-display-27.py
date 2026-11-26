@@ -456,7 +456,12 @@ compile_cpp(hid_probe_source, OUT / 'HidInputProbe.o')
 # PrepareTouchHandoff (r70 device-verified). Plain compile: no static constructors, so no
 # mod_init_func surgery like NativeHidInput's.
 touch_source = ROOT / 'kits/sheng/TouchProbe.cpp'
-compile_cpp(touch_source, OUT / 'TouchProbe.o')
+# The borrowed protocol headers (byte-identical from lonzzi) use C-style {0}
+# compound-literal resets (HoujiTouchProbe.h ht_probe_capture, HoujiTouchReport.h
+# gt_decode); our -Wextra turns those into -Wmissing-field-initializers errors that
+# lonzzi's build never enabled. Silence exactly that class for this one TU instead
+# of editing the verbatim headers.
+compile_cpp(touch_source, OUT / 'TouchProbe.o', extra=('-Wno-missing-field-initializers',))
 
 hid_raw = (OUT / 'NativeHidInput.o').read_bytes()
 
