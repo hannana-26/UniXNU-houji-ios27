@@ -141,7 +141,14 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # press mechanism works; the single press (count=1) fired ~20 s after the first presented frames - the Setup flash already
   # presents - and was likely spent before the lock screen appeared. The existing knobs widen it: 8 presses every 30 s cover
   # ~4 minutes after arming, so one lands while the lock screen is up.
-  "offline-hid-input=1", "offline-hid-home=1", "offline-hid-auto-home=20", "offline-hid-auto-home-count=8", "offline-hid-auto-home-interval=30", "buttons=1"]
+  "offline-hid-input=1", "offline-hid-home=1", "offline-hid-auto-home=20", "offline-hid-auto-home-count=8", "offline-hid-auto-home-interval=30", "buttons=1",
+   # r71 (2026-11-26, touch round, kernel driver): offline-touch=1 starts the houji S3910 worker (TouchProbe.cpp:
+   # lonzzi's GPIO bit-bang SPI protocol layer verbatim + sheng's shell) from the late probe, AFTER the firmware's
+   # PrepareTouchHandoff already powered the chip (r70: preparation=EFI_SUCCESS on screen, votes retained).
+   # sheng-touch-hid=1 makes NativeHidInput register its digitizer sink on the TouchProbe seqlock (our copy at
+   # 71a40e7 parses the pre-rename name; upstream 1140614 renamed it to touch-hid - deliberately not taken this
+   # round, minimal diff). ADT untouched (P12: no touch node in the ADT; lonzzi polls the IRQ GPIO instead).
+  "offline-touch=1", "sheng-touch-hid=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"

@@ -288,12 +288,14 @@ class NativeHidInput : public IOHIDDevice {
         __asm__ volatile("dmb ish":::"memory");
         if(native_touch_seq!=before)return;      // torn read: retry on the next tick
         self->lastSeq=before;
-        // Sizes follow the axis maxima of the touch core: 30480 long, 20320 short, mapped to the same 0..32767 range.
+        // r71 (2026-11-26, touch round): the producer is now the houji S3910 worker (TouchProbe.cpp), whose
+        // gt_decode scales the chip's 1199x2669 application coordinates onto this 1200x2670 panel - so the
+        // axis maxima are the panel's, not the sheng touch core's 30480x20320 this file inherited.
         unsigned char report[1+TOUCH_FINGERS*6+1]={3};
         unsigned slot=0;
         int nextIds[TOUCH_FINGERS],nextX[TOUCH_FINGERS],nextY[TOUCH_FINGERS];
         for(unsigned i=0;i<count && slot<TOUCH_FINGERS;++i,++slot) {
-            unsigned x=transformCoordinate(xs[i],30480),y=transformCoordinate(ys[i],20320);
+            unsigned x=transformCoordinate(xs[i],1200),y=transformCoordinate(ys[i],2670);
             unsigned char *f=report+1+slot*6;
             f[0]=3;f[1]=(unsigned char)(ids[i]&0xff);f[2]=(unsigned char)x;f[3]=(unsigned char)(x>>8);f[4]=(unsigned char)y;f[5]=(unsigned char)(y>>8);   // tip, valid
             nextIds[slot]=ids[i];nextX[slot]=(int)x;nextY[slot]=(int)y;

@@ -448,6 +448,15 @@ buttons_source = ROOT / 'kits/sheng/ButtonProbe.cpp'
 compile_cpp(buttons_source, OUT / 'ButtonProbe.o')
 hid_probe_source = ROOT / 'kits/sheng/HidInputProbe.cpp'
 compile_cpp(hid_probe_source, OUT / 'HidInputProbe.o')
+# r71 (2026-11-26): the touch transport joins the input group - TouchProbe is the houji port of lonzzi's
+# device-proven S3910 GPIO-SPI worker (protocol headers copied byte-identical from
+# lonzzi archive/native/touch, shell on sheng's TouchProbe contract). It defines the 7
+# native_touch_* symbols the r68 stand-ins in HoujiDisplayStandins.cpp carried, and publishes the
+# finger set NativeHidInput consumes. Gated by offline-touch=1; power-on is the firmware's
+# PrepareTouchHandoff (r70 device-verified). Plain compile: no static constructors, so no
+# mod_init_func surgery like NativeHidInput's.
+touch_source = ROOT / 'kits/sheng/TouchProbe.cpp'
+compile_cpp(touch_source, OUT / 'TouchProbe.o')
 
 hid_raw = (OUT / 'NativeHidInput.o').read_bytes()
 
@@ -525,7 +534,7 @@ for stem in ('hid-bindings', 'hid-addresses'):
 hid_late = OUT / 'NativeHidInput.late.o'
 run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func', '--globalize-symbol=__GLOBAL__sub_I_NativeHidInput.cpp',
      OUT / 'NativeHidInput.o', hid_late])
-input_objects = [hid_late, OUT / 'hid-bindings.o', OUT / 'hid-addresses.o', OUT / 'HidInputProbe.o', OUT / 'ButtonProbe.o']
+input_objects = [hid_late, OUT / 'hid-bindings.o', OUT / 'hid-addresses.o', OUT / 'HidInputProbe.o', OUT / 'ButtonProbe.o', OUT / 'TouchProbe.o']
 print(f'HID: {len(hid_bindings)} original IOHIDDevice bindings, vtables {hid_vtables} match the original diversities')
 
 archive = OUT / 'libNativeLegacyDisplay.late.a'
@@ -537,6 +546,7 @@ sources = [ROOT / 'drivers/GopFramebuffer/NativeLegacyDisplay.cpp', ROOT / 'driv
            ROOT / 'drivers/GopFramebuffer/NativeGOPPresenter.cpp', ROOT / 'drivers/GopFramebuffer/NativeGOPWire.h',
            ROOT / 'drivers/GopFramebuffer/NativeHalfCodes.h', source, standins, keystore_source,
            ROOT / 'drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp', hid_source, buttons_source, hid_probe_source,
+           touch_source,
            HID_PATH, ABI_PATH]
 
 

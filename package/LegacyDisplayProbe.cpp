@@ -506,10 +506,17 @@ void native_legacy_display_late_probe(void);
 extern void native_keystore_probe(void);
 extern "C" void native_hid_input_probe(void);
 extern "C" void sheng_buttons_probe(void);
+// r71 (2026-11-26): the touch transport joins the late probe - native_touch_probe starts the houji S3910
+// GPIO-SPI worker (package/TouchProbe.cpp) on offline-touch=1, after the firmware's PrepareTouchHandoff
+// already powered the chip (r70: ldob9/ldob12 + three QUP clocks, preparation=EFI_SUCCESS on screen).
+// It publishes the finger set to NativeHidInput's seqlock (the sink is registered by NativeHidInput
+// itself when sheng-touch-hid=1 is on the command line).
+extern "C" void native_touch_probe(void);
 void native_legacy_display_late_probe(void) {
     native_keystore_probe();
     native_hid_input_probe();
     sheng_buttons_probe();
+    native_touch_probe();
     IOService *display=pendingLegacyDisplay;if(!display)return;pendingLegacyDisplay=nullptr;
     native_legacy_surface_status=OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
     OSDictionary *matching=IOService::nameMatching("IOCoreSurfaceRoot");

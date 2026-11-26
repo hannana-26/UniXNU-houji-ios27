@@ -24,11 +24,10 @@ bool native_adreno_fences_detail(uint32_t *, uint32_t *, uint32_t *) { return fa
 
 // r68 (input round): NativeHidInput (unchanged fuxi/sheng copy) declares the touch digitizer feed of the board touch probe
 // (sheng/aston TouchProbe.cpp) as weak_import; the static kernel link rejects undefined weak symbols (CI 45563568674 second
-// link: _native_touch_count/_hid_reports/_ids/_seq/_set_sink/_xs/_ys). houji has no touch driver yet (own round), so the
-// stand-ins define "no touch source": set_sink never registers a sink, so touchAction()/touchNotify can never run, and the
-// finger set stays empty. The touch round replaces this block with the real TouchProbe.
-void native_touch_set_sink(void (*)(void *), void *) {}
-volatile uint32_t native_touch_seq, native_touch_count, native_touch_hid_reports;
-volatile int native_touch_xs[12], native_touch_ys[12], native_touch_ids[12];
+// link: _native_touch_count/_hid_reports/_ids/_seq/_set_sink/_xs/_ys). The 7 no-op touch stand-ins that lived here from
+// 9d906f8 were replaced in r71 (2026-11-26) by the real producer: package/TouchProbe.cpp (the houji S3910 GPIO-SPI worker,
+// firmware power-on device-verified in r70) now defines native_touch_set_sink and the native_touch_* seqlock globals.
+// Keeping these definitions would be a duplicate-symbol link error (the P14 note warned exactly this).
+// The GPU stand-ins stay: houji links no Adreno yet.
 
 }
