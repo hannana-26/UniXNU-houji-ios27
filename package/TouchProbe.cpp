@@ -101,7 +101,7 @@ static void publish(unsigned count, const struct gt_event *e) {
 // HoujiTouchProbe.inc): SE + GPIO state before any driving, printed once.
 static struct ht_probe gTouchProbe;
 static bool gTouchProbeEnabled;
-static uintptr_t gTouchGcc, gTouchSe;
+static uintptr_t gTouchGcc, gTouchSe, gTouchGpio[6];
 static IOMemoryMap *gTouchGccMap, *gTouchSeMap, *gTouchGpioMap[6];
 static int touchProbeRead32(void *, uint32_t physical, uint32_t *value) {
     if (!ht_probe_address_allowed(physical) || !value) return 0;
