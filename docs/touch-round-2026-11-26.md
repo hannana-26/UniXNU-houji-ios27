@@ -43,7 +43,7 @@
 
 ## 四、资产清单(后续轮直接用)
 
-- 源码:package/TouchProbe.cpp + HoujiTouch{Gpio,Wire,Report,Descriptor,Probe}.h(5 头逐字节,liszzi sha 校验一致);TouchProbe.cpp 的替换点清单在文件头注释。
+- 源码:package/TouchProbe.cpp + HoujiTouch{Gpio,Wire,Report,Descriptor,Probe}.h(5 头逐字节,lonzzi sha 校验一致);TouchProbe.cpp 的替换点清单在文件头注释。
 - 固件:WSL /root/uefi-asm 树(补丁脚本 work/patch-uefi-touch-power.py 可复现);模板 build/uefi-touch1/Mu-houjif-touch1.img sha 26f059b4…(所有后续镜像的 UEFI 基底——含触摸上电)。
 - 打包:work/mk70.sh(固件轮)/mk71.sh(内核轮)断言模板可复用;树快照 work/uefi-tree-before-touch1.txt。
 - 证据:build/bootimg-r10/r70/(上电视频+帧)、r71/(触摸视频 r71.mp4 8DF95BBB…、读回 r71rb.mp4 F4C185F9…、Settings 照片 5a28e6bd…、心跳帧)。
