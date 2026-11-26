@@ -143,7 +143,7 @@ evidence = [
 
 [[area]]
 id = "input"
-status = "implemented"
+status = "device-verified"
 components = []
 paths = ["package/NativeHidInput.cpp", "package/HidInputProbe.cpp", "package/ButtonProbe.cpp", "package/LegacyDisplayProbe.cpp", "package/TouchTrace.h", "scripts/hid-device-24A446-d94ap.json", "board.toml"]
 inputs = ["实体按键事实(均出自 dts/houji.dts 原文):电源=PMK8550 PON(SPMI SID 0,外设 0x13,按住 IRQ 7 与 sheng 同 IP 布局;resin 中断 6=dts resin interrupts <0x00 0x13 0x06>),音量减=resin(linux,code 0x72),音量加=pm8550@1(dts:14280,SID 1)的 gpio 块(pinctrl@8800,reg 0x8800,compatible qcom,pm8550-gpio,dts:14494)第 6 脚(qcom PMIC 每路 GPIO 独立外设:0x8800+(6-1)*0x100=0x8d00=PPID 0x18d,与 sheng/aston ButtonProbe 常量一致),低有效+上拉(dts key_vol_up bias-pull-up,gpios flags 0x01)", "SPMI 窗口/PDC:dts qcom,spmi@c42d000 reg=cnfg 0xc42d000/core 0xc400000/chnls 0xc500000/obsrvr 0xc440000/intr 0xc4c0000,qcom,pdc reg 0xb220000——与 sheng ButtonProbe 常量逐字一致", "IOHIDFamily 源码 pin:profile ios-27.0.1-24A446 [[source]] IOHIDFamily(ref IOHIDFamily-2238.120.5);HID ABI fixture=hid-device-24A446-d94ap.json(kernelcache fa07057b…,与 display fixture 同,207 槽 4 绑定)"]
@@ -156,10 +156,13 @@ findings = ["2026-11-25 r68 四源扫描(纲领四,输入轮):①官方 sheng/of
   "2026-11-25 r68 boot3/4/5+按键实锤(判读更新):boot3/4=坏模式(P11 处置重试;序列好坏坏坏好,未连续 3 坏);boot5=好模式→锁屏→**实体按键全链实机打通实锤:按音量加出音量 HUD、按电源息屏/亮屏可重复**(视频 build/bootimg-r10/r68/r68_buttons.mp4 D0446EAA…4F5F,帧 f02 息屏/f20 音量条;720x1280 30.4s)=ButtonProbe→NativeHidInput→IOHIDFamily→IOHIDEventDriver→backboardd→SpringBoard 全通,r68 输入轮实体按键目标达成。auto-home 未解锁:代码级排除事件驱动未挂(buttonsAction :339 要求 hasEventDriverCached 才发报告,HUD 出现=该门通过);收敛假设 C1=单发 Home 在锁屏出现前被消耗(武装点=首次 transfer_calls>=2,Setup 闪屏已有帧呈现,早于锁屏);C2(Menu bit 不解锁)与按键同通道实锤相悖。r69 方案(待用户批,只改 args 一类):offline-hid-auto-home-count=8+offline-hid-auto-home-interval=30(既有旋钮,覆盖武装后 ~4 分钟)。",
   "2026-11-26 r69 打包完成(实锤,待上机):CI 45709596770 Build kernel/payload 全绿(Summary 134 假失败);此前 GitHub macOS arm64 runner 容量紧张导致 16 次连续 run 未被接走(11-25 18:05 至 11-26 02:59,重试 3 轮自动化解决,教训=容量问题用带间隔的自动重试绕过);mk69.sh 断言全绿(40 参含 auto-home-count=8/interval=30,seed 钉住不变)→boot-houji-r69-autohome.img sha256 983615a0…6977(30203904B)。待用户 boot 判读。"]
 
-completion = ["自有虚拟 HID 设备+实体按键驱动已接线并打包(HidInputProbe/ButtonProbe/NativeHidInput 入显示归档),设备验证待 r68 boot"]
+completion = ["自有虚拟 HID 设备+实体按键驱动已接线并打包(HidInputProbe/ButtonProbe/NativeHidInput 入显示归档)", "**r68/r69 实机验证达成(2026-11-26,输入轮完成)**:实体按键全链通(音量 HUD+电源锁屏/亮屏可重复,r68 boot5 视频实锤 build/bootimg-r10/r68/r68_buttons.mp4);受控自动 Home 经真实 HID 栈解锁锁屏进 iOS 桌面(r69 boot3 照片实锤 build/bootimg-r10/r69/r69_desktop.png:状态栏+Settings 图标+Phone dock 图标=SpringBoard 主屏网格)", "输入通路依赖全部实机通过:IOHIDFamily kext 加载、IOHIDResource 匹配、arm64e 207 槽 vtable 重签、IOHIDDevice class size 208 门、ButtonProbe 的 PMIC SPMI/PDC 常量与 houji.dts 逐项吻合"]
 limits = ["无触摸(houji 触摸控制器驱动未移植,ADT 无触摸节点=后续触摸轮;锁屏到桌面本轮靠受控自动 Home 演示全链),Home 无实体键,iPadOS 27 的 DriverKit 事件服务 usage pair 改写问题(aston :132-149 digitizerPairGuard)已在 HidInputProbe 内置但仅触摸相关"]
-next_action = ["【2026-11-25 已打包,待上机】boot-houji-r68-hid.img(eb30ec4b…)已出,等用户说\"开始\"→fastboot boot→用户目击判读;未上机前不改 status", "r68 boot(等用户开始):判读=锁屏 20s 后是否自动进桌面+实体键反应;成功后=触摸轮(触摸控制器驱动+ADT 节点),再 GPU", "若 auto-home 未生效:短跑读回抓 [hid]/sheng-log 行与 boot-ui-trace 栈,按 stage 归因"]
-evidence = []
+next_action = ["【2026-11-26 输入轮完成,本轮停止】r69 实机:锁屏自动进桌面+实体按键全链通,照片/视频实锤", "后续均需用户另批:触摸轮=触摸控制器驱动移植+ADT 触摸节点(现 ADT 无触摸节点;届时必须删 HoujiDisplayStandins.cpp 的 7 个 native_touch_* 替身换真 TouchProbe,否则重复定义);GPU 轮=Metal/Adreno(桌面壁纸黑=无 GPU 呈现)", "若需复评 auto-home:20s 起算点=首次 transfer_calls>=2(Setup 闪屏期),count=8 interval=30 覆盖武装后 ~4 分钟;更长锁屏延迟调 interval"]
+evidence = [
+  { kind = "device", reference = "docs/handoff-2026-11-26.md (r69 桌面节)", result = "r69 boot3:好模式→锁屏→auto-Home 自动解锁进 iOS 桌面(照片 build/bootimg-r10/r69/r69_desktop.png sha256 2a547758b62b79948e0d7e8b2d74d7ba0af36f3fd0db031fb7b480a59767362d:状态栏 2:18 PM+Settings 图标+Phone dock 图标);桌面状态音量/电源键仍有反应;boot 序列=坏坏好(P11 处置重试)", command = "fastboot boot boot-houji-r69-autohome.img(用户开始,三次)", revision = "90a7ff2" },
+  { kind = "device", reference = "docs/handoff-2026-11-26.md (r68 按键节)", result = "r68 boot5:锁屏状态按音量加出音量 HUD、按电源息屏/亮屏可重复=ButtonProbe→NativeHidInput→IOHIDFamily→IOHIDEventDriver→backboardd→SpringBoard 全链实机通(视频 build/bootimg-r10/r68/r68_buttons.mp4 sha256 D0446EAA…4F5F,帧 f02 息屏/f20 音量条)", command = "fastboot boot boot-houji-r68-hid.img(用户开始,五次)", revision = "616865a" },
+]
 [[area]]
 id = "gpu"
 status = "planned"
