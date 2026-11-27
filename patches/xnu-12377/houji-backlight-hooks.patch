@@ -17,7 +17,7 @@
 +// publish NativeSandboxGrantProcess, which HoujiBacklight.cpp does in publishFirst.
 +static bool (*houji_backlight_conforms_hook)(const OSObject *object, const char *className) = nullptr;
 +extern "C" void houji_backlight_set_conforms_hook(bool (*hook)(const OSObject *, const char *)) {
-+	ouji_backlight_conforms_hook = hook;
++	houji_backlight_conforms_hook = hook;
 +}
 +
  kern_return_t
