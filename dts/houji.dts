@@ -17,7 +17,10 @@ psci {
 	};
 	memory {
 		device_type = "memory";
-		reg = <0x08 0xc0000000 0x00 0x80000000>;
+		/* r74 (2026-11-27): 2 GiB -> 8 GiB window at 0x8c0000000; must equal board.toml dram_size
+		 * and owned_memory_size (devicetree.py cross-check, P5-era CI rule). The UEFI MemoryMapLib
+		 * declares ~11.8 GiB high RAM, so the window fits with room to spare. */
+		reg = <0x08 0xc0000000 0x02 0x00000000>;
 	};
 
 	chosen {

@@ -85,8 +85,12 @@ loader = "firmware"
 # Signed 544-byte VerifiedRoot headers of the iPhone17,2 24A446 OS/SystemOS windows (aston's owner-signed policies, same images).
 root_policies = "{tree}/build/sheng-source-storage/root-policies.bin"
 title = "houji iOS 27.0.1: UniXNU"
-# One contiguous 2 GiB window at 0x8c0000000 (lonzzi houji UEFI HighRAM, iOS16 flow reached XNU there; author claim). Must equal the DTS memory node.
-dram_size = "0x80000000"
+# One contiguous window at 0x8c0000000 (lonzzi houji UEFI HighRAM, iOS16 flow reached XNU there; author claim). Must equal the DTS memory node.
+# r74 (2026-11-27): 2 GiB -> 8 GiB (内存轮r74第0步_2026-11-27.md). Hard caps both hit exactly at 0x200000000:
+# WindowSize.h parser (DarwinBootPkg, 2 MiB aligned) and the ADT owned-memory parser (devicetree.py). The UEFI
+# MemoryMapLib already declares ~11.8 GiB high RAM as conventional, so no firmware change. r19's 16-page
+# bootstrap-table overflow is fixed by houji-start-ram8g-clamp.patch (448 MiB bootstrap map) + houji-vm-kmem-io-128m.patch.
+dram_size = "0x200000000"
 # r12 (2026-11-14): green bar after hand-off, no kernel output. The panic screen does not fit this kernel's padding
 # (0xa37 bytes at ...815c0, padding ends ...81ff0, 7 bytes short); r13 adds only the entry bars + 6 s reset locally
 # (scripts/uefi/mk13.sh).
@@ -99,7 +103,7 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
   # BCM2837 config, already in our CI series). smp=1 = ArmCpu secondary startup opt-in (ArmCpu.cpp:332-338).
   # armcpu-spi-ipi/self-ipi = aston's proven SM8550 set (aston/board.toml). ADT already carries
   # /cpus/cpu0..7 reg 0x000..0x700 (work/chkadtcpu.py on r72 payload) — no ADT change needed.
-  # dram_size stays 0x80000000 (2 GiB); the 8 GiB memory round is a separate later round (doc §十 序 2).
+  # dram_size stayed 0x80000000 (2 GiB) in r73; r74 raised it to 8 GiB (doc §十 序 2, 内存轮r74第0步_2026-11-27.md).
   "armcpu-diagnostics=1",
   # Storage stage: source UFS root on userdata, UFS diagnostics, boot log in the last 32 MiB of userdata.
   # logfs record (2026-11-17): writes gated on the prepared XNULOG.BIN allocation (HoujiLogFsCore.h);
@@ -179,12 +183,16 @@ gpu_addon = false
 [payload.adt]
 # T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.
 chip_id = "0x8140"
-# r19: 8 GiB overflowed XNU's 16-page bootstrap tables (start_first_cpu self-loop at +0x230); keep = dram_size.
-owned_memory_size = "0x80000000"
+# r19: 8 GiB overflowed XNU's 16-page bootstrap tables (start_first_cpu self-loop at +0x230) -> was clamped to 2 GiB.
+# r74 (2026-11-27): the overflow is fixed by houji-start-ram8g-clamp.patch, so owned memory follows dram_size to the
+# 8 GiB parser cap (devicetree.py: 256 MiB..0x200000000 in 2 MiB steps).
+owned_memory_size = "0x200000000"
 # r46: packed delivery (as sheng/aston/cupid/peridot): DarwinBoot keeps the
 # packed seed (small) instead of expanding it -- the unpacked RAMDisk path
 # needed the 8 GiB seed expanded inside the 2 GiB darwinboot window and failed
 # with EFI_BAD_BUFFER_SIZE; the kernel's RamBlock unpacks packed seeds natively.
+# r74: the darwinboot window is 8 GiB now, but packed delivery stays mandatory
+# anyway (an unpacked 8 GiB seed would fill the entire window).
 packed_data_ramdisk = true
 # P10 fix (2026-11-23, plan A as sheng/aston): the 8 GiB packed seed alone is
 # read-only by design (RamBlock isBig serves writes only through the persistent

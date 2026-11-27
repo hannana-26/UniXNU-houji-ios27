@@ -1,0 +1,19 @@
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -607,6 +607,16 @@
+ 	mov		x1, x25
+ 	add		x3, x1, PGBYTES
+ 	mov		x2, x3
++
++	/*
++	 * TB375FC RAM expansion: clamp temporary bootstrap_pagetables mapping to
++	 * <= 448 MiB (0x1C000000, strictly inside DDR Mid 2 and below TEE at 0x70000000).
++	 * HeadSize (~285 MiB for an 8 GiB span) fits inside 448 MiB, and arm_vm_init()
++	 * builds cpu_tte across full BA_MEM_SIZE skipping darwinboot-memory-excluded.
++	 */
++	movz		x6, #0x1c00, lsl #16
++	cmp		x24, x6
++	csel		x24, x6, x24, hi
+ 
+ 	/*
+ 	 * Setup the V=P bootstrap mapping

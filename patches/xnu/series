@@ -1,2 +1,11 @@
 # Board patch paths, one per line in application order.
 fileset-report-registers.patch
+# r74 memory round (2026-11-27): 2 GiB -> 8 GiB window (内存轮r74第0步_2026-11-27.md §三).
+# Borrowed verbatim from liimagination (TB375FC / MT6897,纲领四③ same-generation device),
+# only the @@ hunk coordinates adapted to our xnu-12377 feed (ac9718fb); sources and
+# sha256 recorded in work/mk74patches.py output and porting.toml memory area.
+# Their start.s hunk1 is NOT taken: Aff1 core numbering is already covered by
+# native-smp-secondary.patch (soc series).
+houji-start-ram8g-clamp.patch
+# kmem_io 1 GiB -> 128 MiB frees 896 MiB of kernel VA for kmem_data_shared_range at 8 GiB physical.
+houji-vm-kmem-io-128m.patch
