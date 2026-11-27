@@ -27,10 +27,14 @@
 //      is pending, which would silence the readback tail (纲领 §4.12, the r71
 //      readback lesson: heartbeat lines survive ring-buffer wrap, init lines do
 //      not). Print-only: it never touches DSI registers.
-//   3. houji_backlight_start is non-static: our late probe (LegacyDisplayProbe.cpp)
-//      starts the service with IOService::getResourceService() as the registry
-//      provider (KeyStoreProbe precedent), not a framebuffer object. It also
-//      registers the conformance answer with IOUserClient.cpp's self-contained hook
+//   3. houji_backlight_start is non-static AND extern "C": our late probe
+//      (LegacyDisplayProbe.cpp) starts the service with
+//      IOService::getResourceService() as the registry provider (KeyStoreProbe
+//      precedent), not a framebuffer object - and that file wraps its probe region
+//      in a file-wide extern "C" block (the CI 45920620688 linker frames prove it:
+//      _native_legacy_display_late_probe is a plain C symbol), so this definition
+//      must carry C linkage too or the reference stays undefined. It also registers
+//      the conformance answer with IOUserClient.cpp's self-contained hook
 //      (houji_backlight_set_conforms_hook): the fileset-release-reference link
 //      (board bcm2837) does not carry the device archives, so core must not
 //      reference archive symbols directly (rev 2, CI 45912991195 lesson) - there
@@ -288,9 +292,9 @@ extern "C" bool houji_backlight_allows_properties(IORegistryEntry *entry,OSObjec
     else HoujiBacklightTrace::bump(HoujiBacklightTrace::Rejected);
     return allowed;
 }
-// Adaptation 3: non-static so the LegacyDisplayProbe late probe can start the
-// service (provider = IOService::getResourceService(), KeyStoreProbe precedent).
-void houji_backlight_start(IOService *provider) {
+// Adaptation 3: extern "C" (the late probe's file-wide extern "C" block references this
+// as the C symbol _houji_backlight_start - see the header note) and non-static.
+extern "C" void houji_backlight_start(IOService *provider) {
     unsigned enabled=1;PE_parse_boot_argn("houji_bl",&enabled,sizeof(enabled));if(!enabled || houjiBacklightService)return;
     houji_backlight_set_conforms_hook(houji_backlight_conforms);  // adaptation 3: register the AppleARMBacklight conformance answer
     auto *s=new HoujiBacklight;
