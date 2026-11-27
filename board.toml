@@ -93,7 +93,14 @@ dram_size = "0x80000000"
 panic_screen = false
 tools = true
 trust_cache_sha256 = []
-kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "cpus=1", "armcpu-diagnostics=1",
+kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "cpus=8", "smp=1", "armcpu-spi-ipi=1", "armcpu-self-ipi=1",
+  # r73 multi-core round (2026-11-27, approved order doc 修复顺序重议_性价比版_2026-11-27.md §十):
+  # cpus=1→8: machine_routines.c:1154 parses "cpus" (default MAX_CPUS=8 via native-smp-secondary.patch
+  # BCM2837 config, already in our CI series). smp=1 = ArmCpu secondary startup opt-in (ArmCpu.cpp:332-338).
+  # armcpu-spi-ipi/self-ipi = aston's proven SM8550 set (aston/board.toml). ADT already carries
+  # /cpus/cpu0..7 reg 0x000..0x700 (work/chkadtcpu.py on r72 payload) — no ADT change needed.
+  # dram_size stays 0x80000000 (2 GiB); the 8 GiB memory round is a separate later round (doc §十 序 2).
+  "armcpu-diagnostics=1",
   # Storage stage: source UFS root on userdata, UFS diagnostics, boot log in the last 32 MiB of userdata.
   # logfs record (2026-11-17): writes gated on the prepared XNULOG.BIN allocation (HoujiLogFsCore.h);
   # until logfs is backed up and rebuilt on the phone the open refuses and nothing is written there.
