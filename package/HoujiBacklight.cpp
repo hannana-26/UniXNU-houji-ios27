@@ -12,7 +12,7 @@
 // device evidence on this phone family: lonzzi docs/performance.md:218-227 -
 // r227 DSI initial-level readback + service registration ok, r229 the user
 // confirms dimming responds with no DSI errors. The iOS 27 consumer contract the
-// two IOUserClient hooks (patches/xnu-12377/houji-backlight-hooks.patch) serve is
+// IOUserClient hook (patches/xnu-12377/houji-backlight-hooks.patch) serves is
 // sheng's package/AppleARMBacklight.cpp:349-359 verbatim: CoreBrightness drives a
 // service only when backlight-control = true AND IOObjectConformsTo(service,
 // "AppleARMBacklight") (CBDisplayContaineriOS findBacklight, int-236: publish both
@@ -29,15 +29,17 @@
 //      not). Print-only: it never touches DSI registers.
 //   3. houji_backlight_start is non-static: our late probe (LegacyDisplayProbe.cpp)
 //      starts the service with IOService::getResourceService() as the registry
-//      provider (KeyStoreProbe precedent), not a framebuffer object.
+//      provider (KeyStoreProbe precedent), not a framebuffer object. It also
+//      registers the conformance answer with IOUserClient.cpp's self-contained hook
+//      (houji_backlight_set_conforms_hook): the fileset-release-reference link
+//      (board bcm2837) does not carry the device archives, so core must not
+//      reference archive symbols directly (rev 2, CI 45912991195 lesson) - there
+//      the hook pointer stays null and the fallback never runs.
 //   4. proc_selfname is declared locally with its bsd/sys/proc.h:278 signature
 //      (void proc_selfname(char *, int)) and the call site casts sizeof to int
 //      (-Wsign-conversion). The snapshot hook is kept unchanged.
 //   5. Includes: this is a standalone TU now (the .inc was included by a TU that
 //      already had the IOKit headers).
-// The DCS/DSI register protocol lives in HoujiBacklightProtocol.h, which IS
-// byte-identical to the upstream copy (sha256
-// b15e853021bc2307233663ba6ce62259fcc5ade623cafe7b4c9f21c62489c5c3).
 //   6. The backboardd property grant: the resolved patch stack ALREADY carries the
 //      int-276 mechanism - IOUserClient.cpp's set-properties gate calls
 //      native_sandbox_grant() for services that publish NativeSandboxGrantProcess
@@ -45,6 +47,9 @@
 //      patch is needed: publishFirst publishes NativeSandboxGrantProcess =
 //      "backboardd" (sheng AppleARMBacklight.cpp:360 does the same). The borrowed
 //      houji_backlight_allows_properties hook stays as an unused fallback.
+// The DCS/DSI register protocol lives in HoujiBacklightProtocol.h, which IS
+// byte-identical to the upstream copy (sha256
+// b15e853021bc2307233663ba6ce62259fcc5ade623cafe7b4c9f21c62489c5c3).
 // Statics are POD zero-initialized only (no static OSSharedPtr): this file joins
 // libNativeLegacyDisplay.late.a where a non-trivial static constructor would add a
 // __mod_init_func entry (纲领 §4.11; the borrowed file already complies - its only
@@ -65,6 +70,10 @@
 
 // Adaptation 4: bsd/sys/proc.h:278 in the xnu feed (xnu-3199e8bc).
 extern "C" void proc_selfname(char *buf, int size);
+
+// Adaptation 3: the conformance hook storage lives in IOUserClient.cpp, self-contained
+// in core (see the header note); the archive registers its answer at service start.
+extern "C" void houji_backlight_set_conforms_hook(bool (*hook)(const OSObject *, const char *));
 
 // Cached facts survive message-ring wrap. Snapshot readers never touch DSI
 // or acquire the backlight work loop, including during recovery shutdown.
@@ -283,6 +292,7 @@ extern "C" bool houji_backlight_allows_properties(IORegistryEntry *entry,OSObjec
 // service (provider = IOService::getResourceService(), KeyStoreProbe precedent).
 void houji_backlight_start(IOService *provider) {
     unsigned enabled=1;PE_parse_boot_argn("houji_bl",&enabled,sizeof(enabled));if(!enabled || houjiBacklightService)return;
+    houji_backlight_set_conforms_hook(houji_backlight_conforms);  // adaptation 3: register the AppleARMBacklight conformance answer
     auto *s=new HoujiBacklight;
     if(!s)return;
     if(!s->init()){s->release();return;}
