@@ -77,7 +77,7 @@ procedure = ["panic 屏 pages/free 计数核对内存状态(r50:dyld 映射 ~930
 findings = ["panic 屏计数与预期量级一致;未出现内存类 panic", "packed_data_ramdisk=true 避免 8 GiB 种子展开越窗(r1d85a10)"]
 completion = ["handoff 区域有归属;DarwinBoot/内核/DarwinBoot 窗口边界未越界"]
 limits = ["未做 DMA 一致性压力测试;SMMU 侧未单独审计"]
-next_action = ["Data 卷持久化(persistent_data)评估时补内存审计"]
+next_action = ["Data 卷持久化(persistent_data)评估时补内存审计", "2026-11-27 内存轮 r74 第 0 步完成(设计定案=D:\yizhishouji\内存轮r74第0步_2026-11-27.md,零上机,待批实施):2GiB→8GiB;上限=WindowSize.h 0x200000000 解析器;固件不用动(uefi-houji-work MemoryMapLib.c:51 已声明 0x8C0000000..0xBEA400000 ≈11.8GiB AddMem 常规内存,HoujiRootRAM.h:6-7);变更=start.s 448MiB 钳补丁(liimagination xnu-start-s-ram8g.patch hunk2,sha AAACE5B7…,hunk1 不取=Aff1 已由 native-smp-secondary 覆盖)+vm_kern.c kmem_io 1GiB→128MiB(sha 31D427C0…)+board.toml dram_size/owned_memory_size=0x200000000+dts memory reg 同步;风险=civac 8GiB 延长绿条期(推测 1-3s)/P11 布局敏感(探路烧:连 2 坏重跑 CI);判据=DarwinBoot 交接屏显+短会话读回早期记录;回滚=h2+board.toml 旧值"]
 evidence = [
   { kind = "device", reference = "https://github.com/hannana-26/UniXNU-houji-ios27/blob/storage/docs/handoff-2026-11-19.md (r14 panic 屏 OCR)", result = "panic 屏 pages=0x786? Free=0x34bef,数值合理", command = "fastboot boot boot-houji-r14-dump.img", revision = "c1d302624bd52066d5a3698e3db0be316d649d67" },
 ]
