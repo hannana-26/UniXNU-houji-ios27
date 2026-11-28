@@ -7,7 +7,7 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
  
 +/* houji read-back (NOT sheng code): sheng keeps the four mount results in function-local variables, unreadable afterwards. These look up,
 + * after the mounts, the one entry each adapter mount adds to the original system path (0 = visible through the union, else errno;
-+ * -1 = never ran). package/BootLog.c prints them in the heartbeat row "[appsync]". */
++ * -1 = never ran). package/HoujiBacklight.cpp prints them with its 15 s heartbeat as "HOUJI APPSYNC: hb ..." (only printf reaches the logfs record). */
 +volatile int houji_appsync_ran = -1, houji_appsync_lib = -1, houji_appsync_installd = -1, houji_appsync_helper = -1, houji_appsync_sb = -1;
 +static int
 +houji_appsync_seen(const char *path)

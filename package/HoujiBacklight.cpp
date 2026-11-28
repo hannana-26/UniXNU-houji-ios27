@@ -26,7 +26,8 @@
 //      service is idle: the borrowed tick stops rescheduling once no command/fade
 //      is pending, which would silence the readback tail (纲领 §4.12, the r71
 //      readback lesson: heartbeat lines survive ring-buffer wrap, init lines do
-//      not). Print-only: it never touches DSI registers.
+//      not). Print-only: it never touches DSI registers. Since r76 the same timer
+//      also prints the AppSync runtime read-back line (adaptation 7, below).
 //   3. houji_backlight_start is non-static AND extern "C": our late probe
 //      (LegacyDisplayProbe.cpp) starts the service with
 //      IOService::getResourceService() as the registry provider (KeyStoreProbe
@@ -75,6 +76,17 @@
 
 // Adaptation 4: bsd/sys/proc.h:278 in the xnu feed (xnu-3199e8bc).
 extern "C" void proc_selfname(char *buf, int size);
+
+// Adaptation 7 (r76, backlight B): the AppSync runtime read-back of kern_exec.c houji_appsync_prepare
+// (patches/xnu-12377/houji-appsync-runtime.patch): -1 never ran; else the lookup of the one entry each adapter mount adds to its system
+// path (0 = visible through the union, else errno, 2 = not mounted). Printed with the heartbeat below because only the printf stream reaches
+// the logfs record (the BootLog compose() rows go to the diagnostic page slots only - audit 2026-11-28, handoff section 5, "logfs reads
+// [hid]/diagnostic-page rows" is excluded). weak_import: the symbols exist only when the AppSync patch is in the series.
+extern "C" volatile int houji_appsync_ran __attribute__((weak_import));
+extern "C" volatile int houji_appsync_lib __attribute__((weak_import));
+extern "C" volatile int houji_appsync_installd __attribute__((weak_import));
+extern "C" volatile int houji_appsync_helper __attribute__((weak_import));
+extern "C" volatile int houji_appsync_sb __attribute__((weak_import));
 
 // Adaptation 3: the conformance hook storage lives in IOUserClient.cpp, self-contained
 // in core (see the header note); the archive registers its answer at service start.
@@ -252,6 +264,10 @@ class HoujiBacklight : public IOService {
         printf("HOUJI BACKLIGHT: hb stage=%u failure=%u registered=%u requests=%u rejected=%u grants=%u conforms=%u requested=%u applied=%u measured=%u failed=%u\n",
                v[Stage],v[Failure],v[Registered],v[Requests],v[Rejected],v[Grants],v[Conforms],v[Requested],v[Applied],v[Measured],
                __atomic_load_n(&s->failed,__ATOMIC_ACQUIRE)?1u:0u);
+        // Adaptation 7: AppSync runtime read-back on the same 15 s cadence (survives the ring wrap like the line above).
+        if(&houji_appsync_ran)
+            printf("HOUJI APPSYNC: hb ran=%d lib=%d inst=%d help=%d sb=%d\n",houji_appsync_ran,houji_appsync_lib,houji_appsync_installd,
+                   houji_appsync_helper,houji_appsync_sb);
         if(s->hb)s->hb->setTimeoutMS(15000);
     }
 public:

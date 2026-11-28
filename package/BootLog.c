@@ -118,12 +118,6 @@ extern volatile int native_cryptex_os_stage __attribute__((weak_import));
 extern volatile int native_cryptex_os_status __attribute__((weak_import));
 extern volatile int native_gestalt_cache_status __attribute__((weak_import));
 extern volatile int native_ls_store_status __attribute__((weak_import));
-// r76 (backlight B): the AppSync runtime read-back of kern_exec.c houji_appsync_prepare (patches/xnu-12377/houji-appsync-runtime.patch).
-extern volatile int houji_appsync_ran __attribute__((weak_import));
-extern volatile int houji_appsync_lib __attribute__((weak_import));
-extern volatile int houji_appsync_installd __attribute__((weak_import));
-extern volatile int houji_appsync_helper __attribute__((weak_import));
-extern volatile int houji_appsync_sb __attribute__((weak_import));
 extern volatile uint64_t native_data_persist_present __attribute__((weak_import));
 extern volatile int native_staged_apps_stage __attribute__((weak_import));
 extern volatile int32_t native_buttons_stats[10] __attribute__((weak_import));
@@ -603,15 +597,6 @@ static size_t compose(char *out, size_t cap, uint32_t slot, unsigned now) {
     snprintf(row, sizeof row, "B st=%d irq=%d rep=%d mask=%x apid=%d/%d off=%d pdc=%x err=%d spur=%d", native_buttons_stats[0], native_buttons_stats[1],
              native_buttons_stats[2], native_buttons_stats[3], native_buttons_stats[4], native_buttons_stats[5], native_buttons_stats[6],
              native_buttons_stats[7], native_buttons_stats[8], native_buttons_stats[9]);
-    at = put(out, at, cap, row, sizeof row);
-  }
-  // AppSync runtime (backlight B): ran=1 once houji_appsync_prepare finished (-1 never; 0 gate closed would stay -1 too), then the lookup of the
-  // one entry each adapter mount adds to its system path: lib=/usr/lib/UniXNUAppSync.dylib, inst=/usr/libexec/unixnu-appinst, help=the helper's
-  // UniXNUAppSync.runtime, sb=SpringBoard.app's. Each 0 = visible through the union, else errno (2 = not mounted). All four 0 = runtime is in.
-  if (&houji_appsync_ran) {
-    char row[100];
-    snprintf(row, sizeof row, "[appsync] ran=%d lib=%d inst=%d help=%d sb=%d", houji_appsync_ran, houji_appsync_lib, houji_appsync_installd,
-             houji_appsync_helper, houji_appsync_sb);
     at = put(out, at, cap, row, sizeof row);
   }
   // Panel brightness (AppleARMBacklight.cpp): stage (3 published, negative the failed step), requests, last level, the levels read back from
