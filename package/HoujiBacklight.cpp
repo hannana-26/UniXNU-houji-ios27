@@ -66,6 +66,7 @@
 #include <kern/clock.h>
 #include <libkern/c++/OSNumber.h>
 #include <libkern/c++/OSDictionary.h>
+#include <libkern/c++/OSData.h>
 #include <libkern/c++/OSCollectionIterator.h>
 #include <pexpert/pexpert.h>
 #include <string.h>
@@ -81,6 +82,13 @@ extern "C" void houji_backlight_set_conforms_hook(bool (*hook)(const OSObject *,
 
 // Cached facts survive message-ring wrap. Snapshot readers never touch DSI
 // or acquire the backlight work loop, including during recovery shutdown.
+// iOS 27 CoreBrightness contract constants (sheng AppleARMBacklight.cpp:57-59
+// verbatim values): the range CoreBrightness works in; kMidNits is
+// CoreBrightness's own default. These set the slider's scale, not an absolute
+// brightness - the houji panel's luminance is not measured (porting.toml
+// display findings records them as such). constexpr = POD, no __mod_init_func
+// entry (纲领 §4.11).
+constexpr uint32_t HBL_MIN_NITS=2, HBL_MID_NITS=140, HBL_MAX_NITS=500;
 namespace HoujiBacklightTrace {
 enum Field { Stage, Failure, Registered, Requests, Rejected, Grants, Conforms,
     Requested, Applied, Measured, Control, Status, Interrupt, Fifo, ReadCount, Packet,
@@ -145,14 +153,47 @@ class HoujiBacklight : public IOService {
         __asm__ volatile("dsb osh" ::: "memory");
     }
     void publish(unsigned value) {
-        OSDictionary *b=OSDictionary::withCapacity(3),*p=OSDictionary::withCapacity(1);
+        OSDictionary *b=OSDictionary::withCapacity(3),*m=OSDictionary::withCapacity(3),*p=OSDictionary::withCapacity(2);
         OSNumber *min=OSNumber::withNumber(0ULL,32),*max=OSNumber::withNumber((uint64_t)HBL_SCALE,32),*v=OSNumber::withNumber(value,32);
-        if(b && p && min && max && v){b->setObject("min",min);b->setObject("max",max);b->setObject("value",v);p->setObject("brightness",b);setProperty("IODisplayParameters",p);}
-        OSSafeReleaseNULL(b);OSSafeReleaseNULL(p);OSSafeReleaseNULL(min);OSSafeReleaseNULL(max);OSSafeReleaseNULL(v);
+        // BrightnessControl takes the nits range and the current nits from here on
+        // iOS 27 (sheng AppleARMBacklight.cpp:342-343): millinits = nits * 1000.
+        OSNumber *minMilli=OSNumber::withNumber((uint64_t)HBL_MIN_NITS*1000,32),*maxMilli=OSNumber::withNumber((uint64_t)HBL_MAX_NITS*1000,32);
+        OSNumber *curMilli=OSNumber::withNumber((uint64_t)value*HBL_MAX_NITS*1000/HBL_SCALE,32);
+        if(b && m && p && min && max && v && minMilli && maxMilli && curMilli){
+            b->setObject("min",min);b->setObject("max",max);b->setObject("value",v);
+            m->setObject("min",minMilli);m->setObject("max",maxMilli);m->setObject("value",curMilli);
+            p->setObject("brightness",b);
+            p->setObject("BrightnessMilliNits",m);
+            setProperty("IODisplayParameters",p);
+        }
+        OSSafeReleaseNULL(b);OSSafeReleaseNULL(m);OSSafeReleaseNULL(p);OSSafeReleaseNULL(min);OSSafeReleaseNULL(max);OSSafeReleaseNULL(v);
+        OSSafeReleaseNULL(minMilli);OSSafeReleaseNULL(maxMilli);OSSafeReleaseNULL(curMilli);
+    }
+    // CoreBrightness's Display.m fails without a marketing table (equally spaced
+    // slider samples, signed 16.16 nits), and without calibration parameters it
+    // reads that table before loading it. Both describe the same range as
+    // BrightnessMilliNits. BrightnessControl takes the product luminances from
+    // their own properties, not from the calibration dictionary: at zero the
+    // table rescales to infinity and every slider position means the maximum.
+    // (sheng AppleARMBacklight.cpp:349-383 verbatim; constants are houji's.)
+    void publishCalibration() {
+        const int32_t table[]={int32_t(HBL_MIN_NITS<<16),int32_t(HBL_MID_NITS<<16),int32_t(HBL_MAX_NITS<<16)};
+        if(OSData *marketing=OSData::withBytes(table,sizeof table)){setProperty("backlight-marketing-table",marketing);marketing->release();}
+        // LmaxProduct is read as 4 bytes of 16.16. LmidProduct and LminProduct take
+        // a number as it is; as data they would be read as a float.
+        if(OSData *value=OSData::withBytes(&table[2],sizeof table[2])){setProperty("LmaxProduct",value);value->release();}
+        const struct{const char *key;uint32_t nits;} products[]={{"LminProduct",HBL_MIN_NITS},{"LmidProduct",HBL_MID_NITS}};
+        for(const auto &product:products){if(OSNumber *value=OSNumber::withNumber(product.nits,32)){setProperty(product.key,value);value->release();}}
+        OSDictionary *calibration=OSDictionary::withCapacity(6);
+        if(!calibration)return;
+        const struct{const char *key;uint32_t nits;} fields[]={{"lMinProduct",HBL_MIN_NITS},{"lMidProduct",HBL_MID_NITS},{"lMaxProduct",HBL_MAX_NITS},{"lMinPanel",HBL_MIN_NITS},{"lMidPanel",HBL_MID_NITS},{"lMaxPanel",HBL_MAX_NITS}};
+        for(const auto &field:fields){if(OSNumber *number=OSNumber::withNumber((uint64_t)field.nits<<16,32)){calibration->setObject(field.key,number);number->release();}}
+        setProperty("backlight-calibration-parameters",calibration);
+        calibration->release();
     }
     void publishFirst(unsigned level,bool measured) {
         current=from=to=houjiBacklightFraction(level);written=level;
-        publish(current);setProperty("BootBrightnessMeasured",measured);
+        publishCalibration();publish(current);setProperty("BootBrightnessMeasured",measured);
         setProperty("backlight-control",true);setProperty("NativeSandboxGrantProcess","backboardd");registerService();  // adaptation 6: int-276 grant via the stack's native_sandbox_grant
         HoujiBacklightTrace::set(HoujiBacklightTrace::Registered,1);
         HoujiBacklightTrace::set(HoujiBacklightTrace::Measured,measured);
@@ -222,22 +263,40 @@ public:
         }
         return nullptr;
     }
+    // Level (in the 0..HBL_SCALE fraction space the request pipeline runs in) for
+    // signed 16.16 nits, proportional as the LED current is; a lit panel never
+    // rounds down to off (sheng AppleARMBacklight.cpp:472-478; sheng's kMaxLevel
+    // panel unit maps to our fraction space, the existing curve then applies).
+    static unsigned levelForNits(int32_t fixed) {
+        if(fixed<=0)return 0;
+        const uint64_t scale=(uint64_t)HBL_MAX_NITS<<16;
+        const uint64_t scaled=((uint64_t)fixed*HBL_SCALE+scale/2)/scale;
+        return scaled<1?1:scaled>HBL_SCALE?HBL_SCALE:(unsigned)scaled;
+    }
     static bool values(OSObject *object,unsigned *level,uint64_t *duration) {
         using namespace HoujiBacklightTrace;
         auto *d=OSDynamicCast(OSDictionary,object);
         set(RequestFields,d?d->getCount():0);
-        unsigned bk=0,fk=0;
+        unsigned bk=0,fk=0,nk=0;
+        // iPadOS 27 sends signed 16.16 nits and ramps them itself (zero or less is
+        // the display going dark); iOS 17 sends a level and a fade period in 16.16
+        // seconds (sheng AppleARMBacklight.cpp:482-493). The nits branch wins, as
+        // in sheng; the raw nits value goes to the trace fields so the readback
+        // shows the requested nits, not the converted level.
+        auto *n=numberValue(d?d->getObject("brightness-nits"):nullptr,&nk);
         auto *b=numberValue(d?d->getObject("brightness"):nullptr,&bk);
         auto *f=numberValue(d?d->getObject("FadePeriod"):nullptr,&fk);
-        uint64_t raw=b?b->unsigned64BitValue():0,fade=f?f->unsigned64BitValue():0;
-        set(BrightnessKind,bk);set(FadeKind,fk);
+        uint64_t raw=n?n->unsigned64BitValue():(b?b->unsigned64BitValue():0),fade=f?f->unsigned64BitValue():0;
+        set(BrightnessKind,n?nk:bk);set(FadeKind,fk);
         set(RawBrightnessLo,(unsigned)raw);set(RawBrightnessHi,(unsigned)(raw>>32));
         set(RawFadeLo,(unsigned)fade);set(RawFadeHi,(unsigned)(fade>>32));
         // CoreBrightness may send a parameter dictionary's value and unrelated
-        // display metadata alongside brightness. Only these two numeric keys
+        // display metadata alongside brightness. Only these numeric keys
         // affect this service; never forward the dictionary to setProperties
         // on a superclass or copy arbitrary keys into the registry.
-        if(!d || d->getCount()>16 || !b || raw>HBL_SCALE || (fk && !f))return false;
+        if(!d || d->getCount()>16)return false;
+        if(n){*level=levelForNits((int32_t)n->unsigned32BitValue());*duration=0;return true;}
+        if(!b || raw>HBL_SCALE || (fk && !f))return false;
         if(fade>10u*65536u)return false;
         *level=b->unsigned32BitValue();*duration=fade*1000000/65536;return true;
     }
