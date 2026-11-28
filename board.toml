@@ -80,7 +80,13 @@ kernel-ctrr-to-be-enabled = 0
 # DarwinBoot / kernel-entry stages of the bring-up order.
 [payload]
 volume = "HOUJIPAY"
-size_mib = 96
+# r76 (2026-11-28, backlight B): 96 -> 112 MiB. r75's files filled 95,093,496 of the 95% allowance (95,630,131), 0.5 MiB free; the AppSync addon
+# (kernel.macho.gpuaddon: SpringBoard.app copy 3.6 MiB measured zlib, helper, 2 patched executables, adapter and signer dylibs; est. 7-10 MiB in
+# all) does not fit. The firmware finds the payload by scanning the reserved Kernel window 0xA8000000..0xB8000000 for the FAT boot sector
+# (UniXNURamDiskDxe, work/r12patch.py) and takes the size from that sector, so the volume size is free below the 256 MiB window (DarwinBoot
+# reads the addon with a 64 MiB cap, the kernel with 64 MiB, NativeRamBlock.cpp:705; mk76.py keeps mk75's blob <= 0x10000000 assertion).
+# sheng ships 176 MiB with the same firmware loader. The ADT initrd-start/end in [[bootimg.dtb_node]] below are not what the firmware uses here.
+size_mib = 112
 loader = "firmware"
 # Signed 544-byte VerifiedRoot headers of the iPhone17,2 24A446 OS/SystemOS windows (aston's owner-signed policies, same images).
 root_policies = "{tree}/build/sheng-source-storage/root-policies.bin"
@@ -165,7 +171,14 @@ kernel_args = ["-v", "serial=3", "debug=0x14e", "kt_fixed_zones=120", "-no_slto_
    # command controller (0x0ae94000), reads the panel level back with DCS 0x52 and serves CoreBrightness's
    # brightness/FadePeriod through the two IOUserClient hooks (sheng int-236/int-276 contract). The engine's own
    # default is on; the arg keeps it explicit and reversible (houji_bl=0).
-  "houji_bl=1"]
+  "houji_bl=1",
+    # r76 (2026-11-28, backlight B): appsync=1 enables the official AppSync runtime (sheng board.toml:61 last argument): the
+    # appsync-runtime patch mounts the adapter copies (/usr/lib/UniXNUAppSync.dylib, backboardd/installd/helper/SpringBoard with
+    # the dylib load command) over their system paths, the user-trust patch registers user-app CDHashes. The dylib carries
+    # scripts/appsync/BacklightMode.m: in backboardd only, BrightnessSystemInternal initBLControl: mode 3 (VMBLControl, the
+    # virtual-machine backlight that drops every request because ADT vmm-present=1 = IsVirtualDevice) becomes 1 (physical).
+    # vmm-present stays (AMFI and many frameworks need it): aston.md:314. appsync=0 disables mounts and registration.
+  "appsync=1"]
 
 [payload.runtime]
 tool = "scripts/build-boot-runtime.py"
@@ -179,6 +192,12 @@ build = "24A446"
 trust_components = ["StaticTrustCache", "Cryptex1,SystemTrustCache", "Cryptex1,AppTrustCache"]
 # The trust bundle holds the original caches only; the houji GPU addon is not configured yet.
 gpu_addon = false
+# r76 (2026-11-28, backlight B): official AppSync adapter (scripts/appsync/build.py, pinned to the 24A446 originals of installd,
+# backboardd, MobileInstallationHelperService and SpringBoard; as sheng board.toml:82). It rides on an addon file; with
+# gpu_addon=false the fork's build-boot-runtime.py starts it from an empty NGPUADD2 base (P18, build_boot_shims precedent).
+# Original trust modules stay intact; the adapter's runtime hashes are appended (appsync-owner-trust.bundle). The Data seed is
+# untouched (official test-runtime-inputs.py:89-105 asserts that).
+appsync = true
 
 [payload.adt]
 # T8140 (iPhone17,2 profile chip id 33088). Unverified for this board.

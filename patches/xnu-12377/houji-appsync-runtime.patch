@@ -1,0 +1,89 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -8702,6 +8702,77 @@
+ 	native_ls_store_drop(p, scratch);
+ }
+ 
++/* houji read-back (NOT sheng code): sheng keeps the four mount results in function-local variables, unreadable afterwards. These look up,
++ * after the mounts, the one entry each adapter mount adds to the original system path (0 = visible through the union, else errno;
++ * -1 = never ran). package/BootLog.c prints them in the heartbeat row "[appsync]". */
++volatile int houji_appsync_ran = -1, houji_appsync_lib = -1, houji_appsync_installd = -1, houji_appsync_helper = -1, houji_appsync_sb = -1;
++static int
++houji_appsync_seen(const char *path)
++{
++	vnode_t vp = NULLVP;
++	int error = vnode_lookup(path, 0, &vp, vfs_context_current());
++	if (!error) {
++		vnode_put(vp);
++	}
++	return error;
++}
++
++/* houji (r76, backlight B): sheng's AppSync runtime block (the 36 lines below are sheng-appsync-runtime.patch verbatim), run on its own
++ * boot-arg appsync=1 instead of inside native_gpu_addon_prepare, whose gpu-addon=1 gate also starts the cryptex view, the MobileGestalt
++ * cache drop and the LaunchServices store drop (not wanted in the backlight round). The payload addon is written first; the writer
++ * compares content, so a later gpu-addon=1 run finds the files equal. */
++static void
++houji_appsync_prepare(proc_t p, user_addr_t scratch)
++{
++	uint32_t appsync_gate = 0;
++	if (!PE_parse_boot_argn("appsync", &appsync_gate, sizeof(appsync_gate)) || appsync_gate != 1) {
++		return;
++	}
++	native_gpu_addon_install(p, scratch);
++	/* AppSync uses owner-signed copies at the original service paths. Mount
++	 * the adapter first so a missing library cannot hide a system executable. */
++	uint32_t appsync_enabled = 0;
++	PE_parse_boot_argn("appsync", &appsync_enabled, sizeof(appsync_enabled));
++	if (appsync_enabled == 1) {
++		static const char as_lib_source[] = "/private/var/ngpu/appsync/lib", as_lib_point[] = "/usr/lib";
++		static volatile int as_lib_stage, as_lib_status;
++		native_gpu_addon_mount(p, scratch, 0x600, as_lib_source, sizeof(as_lib_source),
++		    as_lib_point, sizeof(as_lib_point), "/usr/lib/dyld", "/usr/lib/UniXNUAppSync.dylib",
++		    &as_lib_stage, &as_lib_status);
++		if (as_lib_stage == 5 && !as_lib_status) {
++			static const char as_exec_source[] = "/private/var/ngpu/appsync/libexec", as_exec_point[] = "/usr/libexec";
++			static const char as_helper_source[] = "/private/var/ngpu/appsync/helper";
++			static const char as_helper_point[] = "/System/Library/PrivateFrameworks/MobileInstallation.framework/XPCServices/"
++			    "com.apple.MobileInstallationHelperService.xpc";
++			/* Above SpringBoard.app, not on it: LaunchServices refuses a mount root as a bundle, and SpringBoard aborts without its record. */
++			static const char as_sb_source[] = "/private/var/ngpu/appsync/coreservices";
++			static const char as_sb_point[] = "/System/Library/CoreServices";
++			static volatile int as_exec_stage, as_exec_status, as_helper_stage, as_helper_status, as_sb_stage, as_sb_status;
++			native_gpu_addon_mount(p, scratch, 0x600, as_exec_source, sizeof(as_exec_source),
++			    as_exec_point, sizeof(as_exec_point), "/usr/libexec/launchd_cache_loader", "/usr/libexec/unixnu-appinst",
++			    &as_exec_stage, &as_exec_status);
++			native_gpu_addon_mount(p, scratch, 0x600, as_helper_source, sizeof(as_helper_source),
++			    as_helper_point, sizeof(as_helper_point),
++			    "/System/Library/PrivateFrameworks/MobileInstallation.framework/XPCServices/"
++			    "com.apple.MobileInstallationHelperService.xpc/Info.plist",
++			    "/System/Library/PrivateFrameworks/MobileInstallation.framework/XPCServices/"
++			    "com.apple.MobileInstallationHelperService.xpc/UniXNUAppSync.runtime", &as_helper_stage, &as_helper_status);
++			native_gpu_addon_mount(p, scratch, 0x600, as_sb_source, sizeof(as_sb_source),
++			    as_sb_point, sizeof(as_sb_point), "/System/Library/CoreServices/SystemVersion.plist",
++			    "/System/Library/CoreServices/SpringBoard.app/UniXNUAppSync.runtime", &as_sb_stage, &as_sb_status);
++			printf("[appsync-runtime] installd=%d/%d helper=%d/%d SpringBoard=%d/%d\n",
++			    as_exec_stage, as_exec_status, as_helper_stage, as_helper_status, as_sb_stage, as_sb_status);
++		}
++		printf("[appsync-runtime] library=%d/%d\n", as_lib_stage, as_lib_status);
++	}
++	houji_appsync_lib = houji_appsync_seen("/usr/lib/UniXNUAppSync.dylib");
++	houji_appsync_installd = houji_appsync_seen("/usr/libexec/unixnu-appinst");
++	houji_appsync_helper = houji_appsync_seen("/System/Library/PrivateFrameworks/MobileInstallation.framework/XPCServices/"
++	    "com.apple.MobileInstallationHelperService.xpc/UniXNUAppSync.runtime");
++	houji_appsync_sb = houji_appsync_seen("/System/Library/CoreServices/SpringBoard.app/UniXNUAppSync.runtime");
++	houji_appsync_ran = 1;
++}
++
+ /* The deletable system apps (Weather, Notes, Calendar, ...) ship in the OS volume's /private/var/staged_system_apps. A restore copies
+  * them into the Data volume, where SystemAppMigrator installs them during the first-boot data migration; until then only the
+  * placeholders in /System/Library/AppPlaceholders exist and the widgets of those apps stay blank. The owner Data mount hides the OS
+@@ -9090,6 +9161,7 @@
+ 	    strcmp(vfs_statfs(data_mount)->f_fstypename, "apfs")) error = EINVAL;
+ 	if (!error) native_owner_data_stage = 4;
+ 	if (!error) native_gpu_addon_prepare(p, scratch);
++	if (!error) houji_appsync_prepare(p, scratch);
+ 	if (!error) native_staged_apps_prepare(p, scratch, data_mount);
+ done:
+ 	if (data_root) vnode_put(data_root);

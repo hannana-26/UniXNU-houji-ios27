@@ -24,5 +24,16 @@ houji-initproc-fault-panic.patch
 # The backboardd property grant needs NO patch: the stack's native_sandbox_grant gate
 # (IOUserClient.cpp set-properties, the int-276 comment) already grants services that publish
 # NativeSandboxGrantProcess - HoujiBacklight.cpp publishes it (= backboardd) in publishFirst.
-# Last in series.
 houji-backlight-hooks.patch
+# r76 (2026-11-28, backlight B): official AppSync runtime (vmm-present=1 makes CoreBrightness pick VMBLControl, which drops every
+# brightness request; scripts/appsync/BacklightMode.m makes backboardd pick the physical control: aston.md:314, same symptom
+# aston.md:331 = our r74/r75 requests=0). Order as sheng series:18-19 (runtime, then user-trust). Both are gated by boot-arg appsync=1.
+# houji-appsync-runtime.patch = sheng-appsync-runtime.patch (sha256 29885dc9...7550) with ONLY the hunk context/coordinates adapted:
+#   sheng's context is its bluetooth-runtime block, which this series does not carry (we have no Wi-Fi/Bluetooth runtime yet), so the
+#   36 added lines (byte-identical, asserted by work/gen_houji_appsync_runtime.py) are anchored before native_cryptex_os_view() instead
+#   (same adaptation class as r74's houji-start-ram8g-clamp.patch). Test-applied on the CI-equivalent 86-patch tree (work/mkxnutree_b.py).
+houji-appsync-runtime.patch
+# sheng-appsync-user-trust.patch = sheng's file, byte-identical (sha256 4b2a0c88...b40f); registers validated user-app CDHashes in the
+# engineering trust cache and clears the platform bit of an appsync user .app main executable. NOT the aston copy (24d4c75f...,
+# an older snapshot without kern_exec.c / appsync_is_user_code). Applies clean after the runtime patch (same test tree).
+sheng-appsync-user-trust.patch
